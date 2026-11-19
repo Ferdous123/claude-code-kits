@@ -56,4 +56,4 @@ Python 3.8 or newer (standard library only) and git.
 
 ## License
 
-No license chosen yet.
+MIT. See `LICENSE`.
