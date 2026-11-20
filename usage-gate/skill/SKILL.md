@@ -5,13 +5,13 @@ description: Arm the usage gate for this session so it pauses cleanly near the 5
 
 # Usage gate
 
-A hook (`~/.claude/usage-gate/gate.py hook`, set in `~/.claude/settings.json`) does the watching at no token cost. This skill only arms it and tells you how to react to its messages.
+A hook (`gate.py hook`, installed in `~/.claude/settings.json` with absolute paths) does the watching at no token cost. It reads the account's login from the macOS keychain, or from `~/.claude/.credentials.json` on Linux and Windows (read-only, never refreshed). This skill only arms it and tells you how to react to its messages.
 
 ## Arm
 
 Arguments: `[soft] [hard] [ask=<minutes>]`, defaults 80, 95, 10. `off` disarms, `status` reports.
 
-Run (the hook adds the session id):
+Run (the hook adds the session id; use `python` instead of `python3` on Windows, and the messages the gate prints already do):
 
 ```
 python3 -I ~/.claude/usage-gate/gate.py arm --soft <soft> --hard <hard> --ask <minutes>

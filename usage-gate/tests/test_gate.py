@@ -1,5 +1,5 @@
 """Gate state machine tests. Isolated: HOME points at a temp folder, usage is faked, notifications are quiet."""
-import http.server, json, os, subprocess, sys, tempfile, threading, time, unittest
+import http.server, json, os, shutil, subprocess, sys, tempfile, threading, time, unittest
 
 GATE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "gate.py")
 SID = "test-sess"
@@ -7,7 +7,7 @@ SID = "test-sess"
 
 class GateBase(unittest.TestCase):
     def setUp(self):
-        self.home = tempfile.mkdtemp()
+        self.home = tempfile.mkdtemp(prefix="ug home ")
         self.env = dict(os.environ, HOME=self.home, USAGE_GATE_QUIET="1", CLAUDE_CODE_SESSION_ID=SID)
         self.env.pop("CLAUDE_CODE_ACCOUNT_UUID", None)
         self.env.pop("CLAUDE_CONFIG_DIR", None)
@@ -802,6 +802,521 @@ class CommandTest(TelegramBase):
         os.remove(self.conf)
         self.arm()
         self.assertIn("not set up", self.run_gate("listen", fake="10,10").stdout)
+
+
+# ---------- Linux / Windows port (D10, D12) ----------
+def load_gate(home, platform=None):
+    """Import gate.py as a fresh module with HOME (and USERPROFILE) pointing at `home`."""
+    import importlib.util
+    old = {k: os.environ.get(k) for k in ("HOME", "USERPROFILE", "USAGE_GATE_PLATFORM")}
+    os.environ["HOME"] = os.environ["USERPROFILE"] = home
+    if platform:
+        os.environ["USAGE_GATE_PLATFORM"] = platform
+    else:
+        os.environ.pop("USAGE_GATE_PLATFORM", None)
+    try:
+        spec = importlib.util.spec_from_file_location("gate_under_test", GATE)
+        m = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(m)
+        return m
+    finally:
+        for k, v in old.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+class FakeApi(http.server.BaseHTTPRequestHandler):
+    auth, paths, code, five = [], [], 200, 31
+
+    def do_GET(self):
+        cls = type(self)
+        cls.auth.append(self.headers.get("Authorization"))
+        cls.paths.append(self.path)
+        if cls.code != 200:
+            self.send_response(cls.code)
+            self.end_headers()
+            return
+        data = json.dumps({"five_hour": {"utilization": cls.five, "resets_at": None},
+                           "seven_day": {"utilization": 42, "resets_at": None}}).encode()
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(data)
+
+    do_POST = do_GET
+
+    def log_message(self, *a):
+        pass
+
+
+class CredentialsFileTest(GateBase):
+    """No keychain: the login is read from ~/.claude/.credentials.json, read-only (D12)."""
+
+    def setUp(self):
+        super().setUp()
+        FakeApi.auth, FakeApi.paths, FakeApi.code = [], [], 200
+        self.srv = http.server.HTTPServer(("127.0.0.1", 0), FakeApi)
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        self.addCleanup(self.srv.shutdown)
+        self.env.update(USAGE_GATE_NO_KEYCHAIN="1", USAGE_GATE_API="http://127.0.0.1:%d" % self.srv.server_port)
+        self.cred = os.path.join(self.home, ".claude", ".credentials.json")
+
+    def write_cred(self, expires_ms):
+        os.makedirs(os.path.dirname(self.cred), exist_ok=True)
+        with open(self.cred, "w") as f:
+            json.dump({"claudeAiOauth": {"accessToken": "fake-access-tok", "refreshToken": "fake-refresh-tok",
+                                         "expiresAt": expires_ms}}, f)
+        os.utime(self.cred, (1000000000, 1000000000))
+        with open(self.cred, "rb") as f:
+            self.before = (f.read(), os.stat(self.cred).st_mtime)
+
+    def unchanged(self):
+        with open(self.cred, "rb") as f:
+            self.assertEqual((f.read(), os.stat(self.cred).st_mtime), self.before)
+
+    def run_nofake(self, *args):
+        return subprocess.run([sys.executable, "-I", GATE] + list(args), env=self.env,
+                              capture_output=True, text=True, timeout=30)
+
+    def test_reads_usage_with_the_file_token_and_never_writes_it(self):
+        self.write_cred(int((time.time() + 3600) * 1000))
+        r = self.run_nofake("arm")
+        self.assertIn("5-hour 31%", r.stdout)
+        self.assertEqual(FakeApi.auth, ["Bearer fake-access-tok"])
+        self.unchanged()
+
+    def test_expired_token_is_not_refreshed(self):
+        self.write_cred(int((time.time() - 3600) * 1000))
+        FakeApi.code = 401
+        r = self.run_nofake("arm")
+        self.assertIn("login expired", r.stdout)
+        self.assertEqual(FakeApi.paths, ["/api/oauth/usage"])  # no token endpoint call, only the usage read
+        self.unchanged()
+
+    def test_missing_file_is_a_clear_no_login_status(self):
+        r = self.run_nofake("arm")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertIn("no login", r.stdout)
+        self.assertNotIn("Traceback", r.stderr)
+        self.assertFalse(os.path.exists(self.cred))
+        r = self.run_nofake("status")
+        self.assertIn("no login", r.stdout)
+
+    def test_hook_still_denies_at_hard_when_the_cache_cannot_be_written(self):
+        self.write_cred(int((time.time() + 3600) * 1000))
+        self.run_nofake("arm")
+        FakeApi.five = 97
+        self.addCleanup(setattr, FakeApi, "five", 31)
+        cache = os.path.join(self.home, ".claude", "usage-gate", "cache")
+        shutil.rmtree(cache)
+        open(cache, "w").close()  # a file where the cache folder should be: every cache write raises OSError
+        inp = json.dumps({"hook_event_name": "PreToolUse", "session_id": SID, "tool_name": "Agent", "tool_input": {}})
+        r = subprocess.run([sys.executable, "-I", GATE, "hook"], input=inp, env=self.env, capture_output=True,
+                           text=True, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.loads(r.stdout)["hookSpecificOutput"]["permissionDecision"], "deny")
+
+    def test_accounts_without_keychain_says_so_in_one_line(self):
+        r = self.run_nofake("accounts")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(len(r.stdout.strip().splitlines()), 1)
+        self.assertIn("no keychain", r.stdout)
+
+
+class LauncherTest(GateBase):
+    def test_launcher_choice_by_platform(self):
+        g = load_gate(self.home)
+        self.assertEqual(g.launcher("win32"), "python")
+        self.assertEqual(g.launcher("linux"), "python3")
+        self.assertEqual(g.launcher("darwin"), "python3")
+
+    def test_messages_use_injected_platform(self):
+        self.arm()
+        for plat, want, bad in (("win32", "python -I", "python3"), ("linux", "python3 -I", None)):
+            self.env["USAGE_GATE_PLATFORM"] = plat
+            out = self.cmd("pause", fake="50,82")
+            self.assertIn(want, out)
+            if bad:
+                self.assertNotIn(bad, out)
+
+    def test_soft_hook_message_uses_injected_platform(self):
+        self.arm()
+        self.env["USAGE_GATE_PLATFORM"] = "win32"
+        d, r = self.hook("50,82", "Bash")
+        self.assertIn("python -I", r)
+        self.assertNotIn("python3", r)
+
+
+class PrivateWriteTest(GateBase):
+    def test_writes_survive_a_missing_fchmod_and_stay_600_on_posix(self):
+        g = load_gate(self.home)
+        saved = os.fchmod
+        del os.fchmod
+        try:
+            p = os.path.join(self.home, "x", "telegram.json")
+            g.write_private_json(p, {"token": "t"})
+            g.wjson(os.path.join(self.home, "x", "s.json"), {"a": 1})
+        finally:
+            os.fchmod = saved
+        self.assertEqual(json.load(open(p)), {"token": "t"})
+        if os.name == "posix":
+            self.assertEqual(os.stat(p).st_mode & 0o777, 0o600)
+            self.assertEqual(os.stat(os.path.join(self.home, "x", "s.json")).st_mode & 0o777, 0o600)
+
+
+class FallbackLockTest(GateBase):
+    def gate(self, timeout=None):
+        g = load_gate(self.home)
+        g.fcntl = None
+        if timeout is not None:
+            g.LOCK_TIMEOUT = timeout
+        return g
+
+    def test_stale_lock_is_broken_within_the_wait_timeout(self):
+        g = self.gate()
+        path = os.path.join(self.home, "a.lock")
+        open(path + ".lk", "w").close()
+        os.utime(path + ".lk", (time.time() - 5, time.time() - 5))
+        t = time.time()
+        with g.locked(path, timeout=2) as got:
+            self.assertTrue(got)
+        self.assertLess(time.time() - t, 1.5)
+
+    def test_fresh_lock_is_respected(self):
+        g = self.gate()
+        path = os.path.join(self.home, "b.lock")
+        open(path + ".lk", "w").close()
+        with g.locked(path, timeout=0.3, stale=30) as got:
+            self.assertFalse(got)
+        self.assertTrue(os.path.exists(path + ".lk"))  # not ours, left alone
+
+    def test_save_sess_does_not_write_without_the_lock(self):
+        g = self.gate(timeout=0.3)
+        g.LOCK_STALE = 30
+        s = {"session": "lost", "armed": True}
+        os.makedirs(os.path.dirname(g.sess_path("lost")), exist_ok=True)
+        open(g.sess_path("lost") + ".lock.lk", "w").close()
+        self.assertFalse(g.save_sess(s, replace=True))
+        with self.assertRaises(g.SaveBusy):
+            g.must_save(s, replace=True)
+        self.assertFalse(os.path.exists(g.sess_path("lost")))
+
+    def test_lock_going_stale_mid_wait_is_taken_over(self):
+        g = self.gate()
+        path = os.path.join(self.home, "c.lock")
+        open(path + ".lk", "w").close()
+        threading.Timer(0.3, lambda: os.utime(path + ".lk", (time.time() - 60, time.time() - 60))).start()
+        t = time.time()
+        with g.locked(path, timeout=3, stale=1) as got:
+            self.assertTrue(got)
+        self.assertLess(time.time() - t, 2.5)
+
+    def test_release_only_removes_our_own_lock_file(self):
+        g = self.gate()
+        path = os.path.join(self.home, "d.lock")
+        with g.locked(path) as got:
+            self.assertTrue(got)
+            with open(path + ".lk", "w") as f:  # someone broke our lock and took it over
+                f.write("other-owner")
+        self.assertEqual(open(path + ".lk").read(), "other-owner")
+
+    def test_failed_restore_of_a_fresh_lock_means_lock_lost_and_not_acquired(self):
+        from unittest import mock
+        g = self.gate()
+        path = os.path.join(self.home, "e.lock")
+        open(path + ".lk", "w").close()
+        ages = iter([100, 0])  # looked stale, but what the rename took turned out fresh
+        with mock.patch.object(g, "_lock_age", side_effect=lambda lk: next(ages, 0)), \
+                mock.patch.object(g.os, "link", side_effect=OSError("no")):
+            with g.locked(path, timeout=0.3, stale=30) as got:
+                self.assertFalse(got)
+        self.assertIn("lock lost", open(g.LOG).read())
+
+    def test_poll_lock_has_a_longer_stale_age(self):
+        g = self.gate()
+        self.assertGreater(g.POLL_LOCK_STALE, 10)
+
+    def test_save_sess_writes_with_the_lock(self):
+        g = self.gate(timeout=0.3)
+        g.save_sess({"session": "ok", "armed": True}, replace=True)
+        self.assertTrue(json.load(open(g.sess_path("ok")))["armed"])
+
+
+import fcntl as _fcntl
+
+
+class BusyLockTest(TelegramBase):
+    upd, run_gate, poll = CommandTest.upd, CommandTest.run_gate, CommandTest.poll
+
+    def setUp(self):
+        TelegramBase.setUp(self)
+        self.env["USAGE_GATE_POLL_INTERVAL"] = "0"
+        self.configure()
+        self.uid = 1000
+
+    def hold(self):
+        p = os.path.join(self.home, ".claude", "usage-gate", "sessions", SID + ".json.lock")
+        f = open(p, "a+")
+        _fcntl.flock(f, _fcntl.LOCK_EX)
+        self.addCleanup(f.close)
+        return f
+
+    def test_hook_still_denies_when_the_session_lock_is_busy(self):
+        self.env["USAGE_GATE_LOCK_TIMEOUT"] = "0.3"
+        self.arm()
+        self.hold()
+        d, r = self.hook("50,82", "Bash")  # hook() asserts exit code 0
+        self.assertEqual(d, "deny")
+        self.assertIn("USAGE GATE", r)
+
+    def test_hook_keeps_a_hard_stop_when_the_lock_is_busy(self):
+        self.env["USAGE_GATE_LOCK_TIMEOUT"] = "0.3"
+        self.arm()
+        self.hold()
+        self.assertEqual(self.hook("50,97", "Agent")[0], "deny")
+
+    def test_cli_command_reports_busy(self):
+        self.env["USAGE_GATE_LOCK_TIMEOUT"] = "0.3"
+        self.arm()
+        self.hold()
+        r = self.run_gate("pause")
+        self.assertIn("busy", r.stdout + r.stderr)
+        self.assertNotEqual(r.returncode, 0)
+
+    def test_failed_apply_does_not_advance_the_update_id_and_is_retried(self):
+        self.env["USAGE_GATE_LOCK_TIMEOUT"] = "0.3"
+        self.arm()
+        f = self.hold()
+        self.upd("/stop")
+        self.poll()
+        last = os.path.join(self.home, ".claude", "usage-gate", "telegram-last.json")
+        self.assertFalse(os.path.exists(last))
+        _fcntl.flock(f, _fcntl.LOCK_UN)
+        self.poll()
+        self.assertEqual(self.sess().get("manual"), "stop")
+        self.assertTrue(os.path.exists(last))
+
+
+    def arm2(self):
+        self.run_gate("arm", env=dict(self.env, CLAUDE_CODE_SESSION_ID=SID2))
+
+    def sess2(self):
+        with open(os.path.join(self.home, ".claude", "usage-gate", "sessions", SID2 + ".json")) as f:
+            return json.load(f)
+
+    def test_retry_after_busy_does_not_reapply_or_rereply_to_done_sessions(self):
+        self.env["USAGE_GATE_LOCK_TIMEOUT"] = "0.3"
+        self.arm()
+        self.arm2()
+        f = self.hold()  # SID busy; SID2 sorts first and is applied before the failure
+        self.upd("/stop")
+        self.poll()
+        self.assertEqual(len(FakeTelegram.sent), 1)
+        _fcntl.flock(f, _fcntl.LOCK_UN)
+        self.poll()
+        self.assertEqual(len(FakeTelegram.sent), 2)  # only SID's reply is new
+        self.assertEqual(self.sess().get("manual"), "stop")
+        self.assertEqual(self.sess2().get("manual"), "stop")
+
+    def test_other_errors_are_skipped_and_the_update_id_advances(self):
+        self.arm()
+        self.arm2()
+        self.upd("/stop")
+        env = dict(self.env, USAGE_GATE_TEST_APPLY_FAIL=SID2)
+        self.poll(env=env)
+        last = os.path.join(self.home, ".claude", "usage-gate", "telegram-last.json")
+        self.assertEqual(json.load(open(last))["last_update_id"], self.uid)
+        self.assertEqual(self.sess().get("manual"), "stop")  # the other session still got it
+        self.assertIsNone(self.sess2().get("manual"))
+        n = len(FakeTelegram.sent)
+        self.poll()
+        self.assertEqual(len(FakeTelegram.sent), n)  # not retried
+
+
+class WjsonRetryTest(GateBase):
+    def test_replace_retries_on_permission_error_then_succeeds(self):
+        g = load_gate(self.home)
+        real, calls = g.os.replace, []
+
+        def flaky(a, b):
+            calls.append(1)
+            if len(calls) < 3:
+                raise PermissionError("in use")
+            return real(a, b)
+        g.os.replace = flaky
+        try:
+            p = os.path.join(self.home, "w", "x.json")
+            g.wjson(p, {"a": 1})
+        finally:
+            g.os.replace = real
+        self.assertEqual(json.load(open(p)), {"a": 1})
+        self.assertEqual(len(calls), 3)
+
+    def test_failure_cleans_tmp_and_save_sess_does_not_raise(self):
+        g = load_gate(self.home)
+        real = g.os.replace
+        g.os.replace = lambda a, b: (_ for _ in ()).throw(PermissionError("in use"))
+        try:
+            g.wjson.__defaults__  # noqa
+            self.assertFalse(g.save_sess({"session": "pe", "armed": True}, replace=True))
+        finally:
+            g.os.replace = real
+        d = os.path.dirname(g.sess_path("pe"))
+        self.assertEqual([n for n in os.listdir(d) if n.endswith(".tmp")], [])
+
+
+class KeychainChoiceTest(GateBase):
+    def test_keychain_preferred_over_credentials_file_on_darwin(self):
+        from unittest import mock
+        os.makedirs(os.path.join(self.home, ".claude"))
+        with open(os.path.join(self.home, ".claude", ".credentials.json"), "w") as f:
+            json.dump({"claudeAiOauth": {"accessToken": "FILE"}}, f)
+        g = load_gate(self.home, platform="darwin")
+        os.environ.pop("USAGE_GATE_NO_KEYCHAIN", None)
+        fake = mock.Mock(returncode=0, stdout=json.dumps({"claudeAiOauth": {"accessToken": "KEYCHAIN"}}))
+        with mock.patch.object(g.shutil, "which", return_value="/usr/bin/security"), \
+                mock.patch.object(g.subprocess, "run", return_value=fake):
+            self.assertEqual(g.kc_read("x")["claudeAiOauth"]["accessToken"], "KEYCHAIN")
+        with mock.patch.object(g, "platform", return_value="linux"):
+            self.assertEqual(g.kc_read("x")["claudeAiOauth"]["accessToken"], "FILE")
+
+    def test_no_keychain_ignores_account_uuid_and_never_manages(self):
+        from unittest import mock
+        g = load_gate(self.home)
+        os.environ["CLAUDE_CODE_ACCOUNT_UUID"] = "some-uuid"
+        try:
+            with mock.patch.object(g, "platform", return_value="linux"):
+                svc, email = g.session_service()
+                g.wjson(g.CONFIG, {"accounts": {"u": {"service": svc, "managed": True}}})
+                self.assertTrue(g.managed(svc))
+                self.assertFalse(g.has_keychain())
+        finally:
+            os.environ.pop("CLAUDE_CODE_ACCOUNT_UUID")
+        self.assertEqual(svc, g.DEFAULT_SVC)
+
+
+class HookEncodingTest(GateBase):
+    def test_hook_reads_utf8_bytes_on_stdin(self):
+        inp = json.dumps({"hook_event_name": "PreToolUse", "session_id": SID, "tool_name": "Bash",
+                          "tool_input": {"command": "echo h\u00e9llo \u2603"}}, ensure_ascii=False).encode("utf-8")
+        env = dict(self.env, PYTHONIOENCODING="ascii", PYTHONUTF8="0", LC_ALL="C")
+        r = subprocess.run([sys.executable, "-I", GATE, "hook"], input=inp, env=env, capture_output=True, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_utf8_session_file_roundtrips_under_ascii_locale(self):
+        env = dict(self.env, LC_ALL="C", PYTHONUTF8="0", USAGE_GATE_FAKE="10,10")
+        os.makedirs(os.path.join(self.home, "caf\u00e9"))
+        r = subprocess.run([sys.executable, "-I", GATE, "arm"], env=env, capture_output=True, text=True,
+                           cwd=os.path.join(self.home, "caf\u00e9"), timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(self.sess()["project"], "caf\u00e9")
+
+
+INSTALL = os.path.join(os.path.dirname(GATE), "install.py")
+
+
+class InstallerTest(GateBase):
+    def setUp(self):
+        super().setUp()
+        self.env.update(USERPROFILE=self.home, USAGE_GATE_NO_KEYCHAIN="1")
+        self.settings = os.path.join(self.home, ".claude", "settings.json")
+        os.makedirs(os.path.dirname(self.settings))
+        other = {"type": "command", "command": "echo other-hook"}
+        old = {"type": "command", "command": "python3 -I ~/.claude/usage-gate/gate.py hook", "timeout": 20}
+        with open(self.settings, "w") as f:
+            json.dump({"theme": "dark", "hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [other]},
+                                                                {"matcher": "*", "hooks": [old]}]}}, f)
+
+    def install(self):
+        return subprocess.run([sys.executable, INSTALL], env=self.env, capture_output=True, text=True, timeout=60)
+
+    def cmds(self, ev):
+        d = json.load(open(self.settings))
+        return [h["command"] for g in d["hooks"][ev] for h in g["hooks"]]
+
+    def test_merges_hooks_with_absolute_paths_and_no_duplicate(self):
+        for _ in range(2):
+            r = self.install()
+            self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        gate = os.path.join(self.home, ".claude", "usage-gate", "gate.py")
+        self.assertTrue(os.path.exists(gate))
+        self.assertTrue(os.path.exists(os.path.join(self.home, ".claude", "skills", "usage-gate", "SKILL.md")))
+        pre = self.cmds("PreToolUse")
+        self.assertIn("echo other-hook", pre)
+        ours = [c for c in pre if "gate.py" in c]
+        self.assertEqual(len(ours), 1)
+        self.assertTrue(ours[0].startswith('"%s" ' % (shutil.which("python3") or sys.executable)), ours[0])
+        self.assertIn(gate.replace("\\", "/"), ours[0])
+        self.assertNotIn("~", ours[0])
+        self.assertNotIn("python3 -I", ours[0])
+        self.assertEqual(len([c for c in self.cmds("PostToolUse") if "gate.py" in c]), 1)
+        self.assertEqual(json.load(open(self.settings))["theme"], "dark")
+
+    def test_accounts_step_is_skipped_with_a_note_without_keychain(self):
+        r = self.install()
+        self.assertIn("no keychain", r.stdout)
+
+
+    def test_command_runs_through_a_shell_with_a_space_in_home(self):
+        self.install()
+        ours = [c for c in self.cmds("PreToolUse") if "gate.py" in c][0]
+        self.assertIn(" ", self.home)
+        r = subprocess.run(ours, shell=True, input="{}", env=self.env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+
+    def test_interpreter_is_not_a_pinned_versioned_path(self):
+        self.install()
+        ours = [c for c in self.cmds("PreToolUse") if "gate.py" in c][0]
+        want = shutil.which("python3") or sys.executable
+        self.assertTrue(ours.startswith('"%s" ' % want), ours)
+
+    @unittest.skipIf(os.name == "nt", "posix PATH layout")
+    def test_python_from_a_venv_or_shims_dir_is_skipped(self):
+        root = tempfile.mkdtemp()
+        dirs = {n: os.path.join(root, n) for n in ("venv/bin", "pyenv/shims", "real")}
+        for d in dirs.values():
+            os.makedirs(d)
+            with open(os.path.join(d, "python3"), "w") as f:
+                f.write("#!/bin/sh\n")
+            os.chmod(os.path.join(d, "python3"), 0o755)
+        self.env.update(VIRTUAL_ENV=os.path.join(root, "venv"),
+                        PATH=os.pathsep.join([dirs["venv/bin"], dirs["pyenv/shims"], dirs["real"]]))
+        self.install()
+        ours = [c for c in self.cmds("PreToolUse") if "gate.py" in c][0]
+        self.assertTrue(ours.startswith('"%s" ' % os.path.join(dirs["real"], "python3")), ours)
+
+    def test_missing_settings_is_created(self):
+        os.remove(self.settings)
+        r = self.install()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(len(self.cmds("PreToolUse")), 1)
+
+    def test_malformed_settings_stops_before_writing_anything(self):
+        with open(self.settings, "w") as f:
+            f.write("{ not json")
+        r = self.install()
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("settings.json", r.stdout + r.stderr)
+        self.assertEqual(open(self.settings).read(), "{ not json")
+        self.assertFalse(os.path.exists(os.path.join(self.home, ".claude", "usage-gate", "gate.py")))
+        self.assertEqual([n for n in os.listdir(os.path.dirname(self.settings)) if n.endswith(".tmp")], [])
+
+    def test_bom_settings_is_read_and_others_empty_groups_are_kept(self):
+        d = json.load(open(self.settings))
+        d["hooks"]["Stop"] = [{"matcher": "", "hooks": []}]
+        with open(self.settings, "w", encoding="utf-8-sig") as f:
+            json.dump(d, f)
+        r = self.install()
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(json.load(open(self.settings))["hooks"]["Stop"], [{"matcher": "", "hooks": []}])
+
+    def test_installed_gate_runs(self):
+        self.install()
+        gate = os.path.join(self.home, ".claude", "usage-gate", "gate.py")
+        r = subprocess.run([sys.executable, "-I", gate, "hook"], input="{}", env=self.env,
+                           capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0)
 
 
 if __name__ == "__main__":

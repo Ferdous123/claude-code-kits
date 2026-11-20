@@ -2,7 +2,7 @@
 """usage-gate: pause armed Claude Code sessions cleanly near plan limits, resume after reset.
 
 Zero-token by design: usage comes from Anthropic's usage endpoint via the account's
-Claude Code login in the macOS keychain; enforcement is a PreToolUse/PostToolUse hook.
+Claude Code login (macOS keychain, or ~/.claude/.credentials.json elsewhere); enforcement is a PreToolUse/PostToolUse hook.
 
 Commands (the hook appends --session <id> automatically when Claude runs them):
   arm [--soft 80] [--hard 95] [--ask 10]   arm this session
@@ -16,7 +16,7 @@ Commands (the hook appends --session <id> automatically when Claude runs them):
   telegram setup|test|poll                 connect / test Telegram alerts (token on stdin) / read commands
   hook                                     hook entry point (reads JSON on stdin)
 """
-import contextlib, copy, getpass, hashlib, json, os, re, subprocess, sys, time, urllib.error, urllib.request
+import contextlib, copy, getpass, hashlib, json, os, re, shutil, subprocess, sys, time, urllib.error, urllib.request, uuid
 try:
     import fcntl
 except ImportError:  # Windows: no fcntl; locked() falls back to an O_EXCL lock file
@@ -29,11 +29,29 @@ NOTES = os.path.join(GATE, "notes")
 CACHE = os.path.join(GATE, "cache")
 LOG = os.path.join(GATE, "gate.log")
 CONFIG = os.path.join(GATE, "config.json")
-SELF = "python3 -I ~/.claude/usage-gate/gate.py"
+
+
+def platform():
+    return os.environ.get("USAGE_GATE_PLATFORM") or sys.platform
+
+
+def launcher(plat=None):
+    """Interpreter name for commands shown to the model: `python` on Windows, `python3` elsewhere."""
+    return "python" if (plat or platform()).startswith("win") else "python3"
+
+
+def has_keychain():
+    return platform() == "darwin" and not os.environ.get("USAGE_GATE_NO_KEYCHAIN") and shutil.which("security") is not None
+
+
+SELF = launcher() + " -I ~/.claude/usage-gate/gate.py"
 DEFAULT_SVC = "Claude Code-credentials"
 CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
-API = "https://api.anthropic.com"
+API = os.environ.get("USAGE_GATE_API") or "https://api.anthropic.com"
+LOCK_TIMEOUT = float(os.environ.get("USAGE_GATE_LOCK_TIMEOUT") or 10)  # seconds a lock is waited for; also the longest a fallback lock file counts as live
+LOCK_STALE = None   # tests: stale age override for fallback lock files (default: the wait timeout)
+POLL_LOCK_STALE = 120  # the poll lock is held across network calls
 HOOK_TTL = 120   # seconds a usage reading is reused by the hook
 WAIT_POLL = 300  # seconds between readings while paused
 NEW_WORK = {"Agent", "Task", "Workflow", "ScheduleWakeup", "CronCreate", "RemoteTrigger",
@@ -51,7 +69,7 @@ def now():
 def log(msg):
     try:
         os.makedirs(GATE, exist_ok=True)
-        with open(LOG, "a") as f:
+        with open(LOG, "a", encoding="utf-8") as f:
             f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + msg + "\n")
     except Exception:
         pass
@@ -59,25 +77,99 @@ def log(msg):
 
 def rjson(path, default=None):
     try:
-        with open(path) as f:
+        with open(path, encoding="utf-8-sig") as f:
             return json.load(f)
     except Exception:
         return default
 
 
+def replace_retry(tmp, path):
+    """os.replace with a few retries (Windows raises PermissionError while the target is open); removes tmp on failure."""
+    try:
+        for i in range(6):
+            try:
+                os.replace(tmp, path)
+                return
+            except PermissionError:
+                if i == 5:
+                    raise
+                time.sleep(0.05)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def wjson(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     tmp = path + ".%d.tmp" % os.getpid()
-    with open(tmp, "w") as f:
-        json.dump(data, f, indent=1)
-    os.replace(tmp, path)
+    try:
+        with open_private(tmp) as f:
+            json.dump(data, f, indent=1)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+    replace_retry(tmp, path)
+
+
+def open_private(path):
+    """Open `path` for writing (utf-8), mode 600 on POSIX (os.fchmod is absent on Windows, where it is skipped)."""
+    f = os.fdopen(os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600), "w", encoding="utf-8")
+    if hasattr(os, "fchmod"):
+        os.fchmod(f.fileno(), 0o600)
+    return f
+
+
+def write_private_json(path, data):
+    wjson(path, data)
+
+
+def _lock_age(lk):
+    try:
+        return now() - os.path.getmtime(lk)
+    except OSError:
+        return 0
+
+
+def _break_stale(lk, stale):
+    """Remove a stale lock file. Rename first (atomic: one breaker wins), then check what we took; if it turned out
+    fresh (the owner released and another process took the lock meanwhile) put it back. Returns False when that
+    restore failed: a live lock was lost, so the caller must not treat the lock as acquired."""
+    if _lock_age(lk) <= stale:
+        return True
+    gone = "%s.%d.%s.stale" % (lk, os.getpid(), uuid.uuid4().hex[:6])
+    try:
+        os.rename(lk, gone)
+    except OSError:
+        return True
+    ok = True
+    if _lock_age(gone) <= stale:
+        try:
+            os.link(gone, lk)
+        except OSError:
+            ok = False
+            log("lock lost: could not restore a live lock %s" % os.path.basename(lk))
+    try:
+        os.remove(gone)
+    except OSError:
+        pass
+    return ok
 
 
 @contextlib.contextmanager
-def locked(path, wait=True, timeout=10):
+def locked(path, wait=True, timeout=None, stale=None):
     """Exclusive lock on `path` (flock; O_EXCL lock file where fcntl is missing). Yields True when held.
-    With wait=False it gives up at once; with wait=True it gives up after `timeout` s and yields False."""
+    With wait=False it gives up at once; with wait=True it gives up after `timeout` s and yields False.
+    A fallback lock file older than `stale` s (default: the timeout) is taken over; it holds its owner's nonce
+    and is released only by that owner."""
     os.makedirs(os.path.dirname(path), exist_ok=True)
+    timeout = LOCK_TIMEOUT if timeout is None else timeout
+    stale = stale if stale is not None else (LOCK_STALE if LOCK_STALE is not None else timeout)
     end, got = now() + timeout, False
     if fcntl:
         f = open(path, "a+")
@@ -97,19 +189,19 @@ def locked(path, wait=True, timeout=10):
                 fcntl.flock(f, fcntl.LOCK_UN)
             f.close()
         return
-    lk = path + ".lk"
+    lk, nonce = path + ".lk", "%d:%s" % (os.getpid(), uuid.uuid4().hex)
     while True:
+        if not _break_stale(lk, stale):
+            break
         try:
-            os.close(os.open(lk, os.O_CREAT | os.O_EXCL | os.O_WRONLY))
+            fd = os.open(lk, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+            try:
+                os.write(fd, nonce.encode())
+            finally:
+                os.close(fd)
             got = True
             break
         except FileExistsError:
-            try:
-                if now() - os.path.getmtime(lk) > 30:  # stale lock of a dead process
-                    os.remove(lk)
-                    continue
-            except OSError:
-                pass
             if not wait or now() >= end:
                 break
             time.sleep(0.02)
@@ -120,7 +212,10 @@ def locked(path, wait=True, timeout=10):
     finally:
         if got:
             try:
-                os.remove(lk)
+                with open(lk, encoding="utf-8") as f:
+                    mine = f.read() == nonce
+                if mine:
+                    os.remove(lk)
             except OSError:
                 pass
 
@@ -223,7 +318,7 @@ def cmd_telegram(argv):
         try:
             c = tg_conf()
             if c:
-                tg_send(c, sys.stdin.read(), argv[1] if len(argv) > 1 else "", argv[2] if len(argv) > 2 else "")
+                tg_send(c, sys.stdin.buffer.read().decode("utf-8", "replace"), argv[1] if len(argv) > 1 else "", argv[2] if len(argv) > 2 else "")
         except Exception as e:
             log("telegram send failed: %s" % e)
     elif sub == "poll":
@@ -266,12 +361,7 @@ def cmd_telegram(argv):
         c = rjson(TG_CONFIG, {}) or {}
         c.update(token=token, chat_id=chat)
         os.makedirs(GATE, exist_ok=True)
-        tmp = TG_CONFIG + ".%d.tmp" % os.getpid()
-        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-        with os.fdopen(fd, "w") as f:
-            os.fchmod(f.fileno(), 0o600)
-            json.dump(c, f, indent=1)
-        os.replace(tmp, TG_CONFIG)
+        write_private_json(TG_CONFIG, c)
         try:
             tg_send(c, "usage-gate is connected.")
         except Exception as e:
@@ -293,7 +383,7 @@ def poll_interval():
 
 def read_polled():
     try:
-        with open(TG_POLLED) as f:
+        with open(TG_POLLED, encoding="utf-8") as f:
             return float(f.read())
     except Exception:
         return 0.0
@@ -326,7 +416,7 @@ def do_continue(s):
     u = usage(s["service"], 0)
     lv = "ok" if "error" in u else level(s, u)
     s.update(phase="run", override=None if lv == "ok" else lv, told=None, manual=None)
-    save_sess(s)
+    must_save(s)
     return "Go on. " + ("Next gate at %g%%." % s["hard"] if lv == "soft" else
                         "Gating is off until limits drop below %g%%." % s["soft"] if lv == "hard" else "")
 
@@ -344,7 +434,7 @@ def apply_command(s, name):
         s.update(manual="stop", override=None, told=None)
         if not ph.startswith("paused"):
             s["phase"] = "hard"
-        save_sess(s)
+        must_save(s)
         txt = "Hard stop: tools are blocked now. Say /resume to go on."
     elif name == "pause":
         if ph.startswith("paused"):
@@ -352,21 +442,38 @@ def apply_command(s, name):
         u = usage(s["service"], HOOK_TTL)
         lv = "ok" if "error" in u else level(s, u)
         s.update(phase="packing", told=None, override=None, manual="pause" if lv == "ok" else None)
-        save_sess(s)
+        must_save(s)
         txt = "Packing up now. Say /resume to go on."
     elif name == "off":
         s.update(armed=False, manual=None)
-        save_sess(s)
+        must_save(s)
         txt = "Disarmed."
     else:
         return ""
     s = load_sess(s["session"]) or s
     bump(s, name)
-    save_sess(s)
+    must_save(s)
     return txt
 
 
-def handle_message(c, m):
+TG_DONE = os.path.join(GATE, "telegram-done.json")   # update id -> targets already answered (retry after a busy save)
+
+
+def done_mark(uid, key=None):
+    """Targets of update `uid` already applied; with `key`, record it. Runs under the poll lock."""
+    st = rjson(TG_DONE, {}) or {}
+    cur = st.get(str(uid), [])
+    if key is None:
+        return cur
+    cur.append(key)
+    st[str(uid)] = cur
+    for k in sorted(st, key=int)[:-50]:
+        del st[k]
+    wjson(TG_DONE, st)
+    return cur
+
+
+def handle_message(c, m, uid=None):
     if str((m.get("chat") or {}).get("id")) != str(c["chat_id"]):
         return
     parts = (m.get("text") or "").split()
@@ -393,14 +500,29 @@ def handle_message(c, m):
         target = armed
     if name == "help":
         if target or arg or reply_to:  # a bare /help is answered only by machines that have armed sessions
-            tg_send(c, HELP)
+            if uid is None or "_" not in done_mark(uid):
+                tg_send(c, HELP)
+                uid is None or done_mark(uid, "_")
         return
     if not target and name == "status" and arg:
-        tg_send(c, "no armed sessions")
+        if uid is None or "_" not in done_mark(uid):
+            tg_send(c, "no armed sessions")
+            uid is None or done_mark(uid, "_")
     for s in target:
-        txt = apply_command(s, name)
-        log("telegram command /%s -> %s" % (name, s["session"]))
-        tg_send(c, txt, s.get("email", ""), s["session"])
+        if uid is not None and s["session"] in done_mark(uid):
+            continue
+        try:
+            if os.environ.get("USAGE_GATE_TEST_APPLY_FAIL") == s["session"]:  # tests only
+                raise RuntimeError("test failure")
+            txt = apply_command(s, name)
+            log("telegram command /%s -> %s" % (name, s["session"]))
+            tg_send(c, txt, s.get("email", ""), s["session"])
+        except SaveBusy:
+            raise
+        except Exception as e:
+            log("telegram command failed for %s: %s: %s" % (s["session"], type(e).__name__, str(e).replace(c["token"], "<token>")))
+        if uid is not None:
+            done_mark(uid, s["session"])
 
 
 def tg_poll(claimed=False):
@@ -410,17 +532,17 @@ def tg_poll(claimed=False):
     if not c or not (claimed or poll_due()):
         return
     try:
-        with locked(os.path.join(GATE, "telegram-poll.lock"), wait=False) as got:
+        with locked(os.path.join(GATE, "telegram-poll.lock"), wait=False, stale=POLL_LOCK_STALE) as got:
             if not got or not (claimed or poll_due()):
                 return
-            with open(TG_POLLED, "w") as f:
+            with open(TG_POLLED, "w", encoding="utf-8") as f:
                 f.write(str(now()))
             try:
                 ups = tg_call(c["token"], "getUpdates", {"timeout": 0, "allowed_updates": ["message"]}) or []
             except RuntimeError as e:
                 log("telegram poll failed: %s" % e)
                 if "409" in str(e):  # another poller holds the bot: back off
-                    with open(TG_POLLED, "w") as f:
+                    with open(TG_POLLED, "w", encoding="utf-8") as f:
                         f.write(str(now() + 45))
                 return
             last = (rjson(TG_LAST, {}) or {}).get("last_update_id", 0)
@@ -434,12 +556,15 @@ def tg_poll(claimed=False):
                     leading = False
                 if uid <= last or old:
                     continue
+                try:
+                    handle_message(c, m, uid)
+                except SaveBusy as e:  # not applied: leave the id where it was so the next poll retries it
+                    log("telegram command busy: %s" % e)
+                    break
+                except Exception as e:  # any other error: skip this command and move on
+                    log("telegram command failed: %s: %s" % (type(e).__name__, str(e).replace(c["token"], "<token>")))
                 last = uid
                 wjson(TG_LAST, {"last_update_id": uid})
-                try:
-                    handle_message(c, m)
-                except Exception as e:
-                    log("telegram command failed: %s: %s" % (type(e).__name__, str(e).replace(c["token"], "<token>")))
             if ack:  # only commands older than the age limit are dropped from the shared queue
                 try:
                     tg_call(c["token"], "getUpdates", {"timeout": 0, "offset": ack, "limit": 1})
@@ -454,7 +579,7 @@ def claim_poll_slot():
     with locked(TG_POLLED + ".lock", timeout=2) as got:
         if not got or not poll_due():
             return False
-        with open(TG_POLLED, "w") as f:
+        with open(TG_POLLED, "w", encoding="utf-8") as f:
             f.write(str(now()))
         return True
 
@@ -464,7 +589,7 @@ def start_poll_child():
     try:
         if tg_conf() and claim_poll_slot():
             if os.environ.get("USAGE_GATE_SPAWN_COUNT"):  # tests only: one line per spawned poll child
-                with open(os.environ["USAGE_GATE_SPAWN_COUNT"], "a") as f:
+                with open(os.environ["USAGE_GATE_SPAWN_COUNT"], "a", encoding="utf-8") as f:
                     f.write("x\n")
             subprocess.Popen([sys.executable, "-I", os.path.abspath(__file__), "telegram", "poll", "--claimed"],
                              stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
@@ -541,25 +666,59 @@ def load_sess(sid):
     return s
 
 
+class SaveBusy(Exception):
+    pass
+
+
 def save_sess(s, replace=False):
     """Save under a per-session lock, writing back only the keys this process changed since it loaded the
-    session, so a concurrent change by another process (a phone command, the hook) is never overwritten."""
+    session, so a concurrent change by another process (a phone command, the hook) is never overwritten.
+    Returns False (and logs) when the lock is busy or the write fails; never raises for that, so the hook
+    always reaches its decision."""
     sid, path = s["session"], sess_path(s["session"])
-    # TODO(Windows port): the O_EXCL fallback can hold a stale lock for up to 30 s and `got` is ignored here.
-    with locked(path + ".lock"):
-        snap, cur = _SNAP.get(sid), rjson(path)
-        if not replace and snap is not None and cur is not None:
-            for k, v in s.items():
-                if k not in snap or snap[k] != v:
-                    cur[k] = v
-            s.clear()
-            s.update(cur)
-        wjson(path, s)
+    try:
+        with locked(path + ".lock") as got:
+            if not got:  # a live process holds the session file; never write unlocked
+                log("save_sess: lock busy for %s, not saved" % sid)
+                return False
+            snap, cur = _SNAP.get(sid), rjson(path)
+            if not replace and snap is not None and cur is not None:
+                for k, v in s.items():
+                    if k not in snap or snap[k] != v:
+                        cur[k] = v
+                s.clear()
+                s.update(cur)
+            wjson(path, s)
+    except OSError as e:
+        log("save_sess: write failed for %s: %s" % (sid, type(e).__name__))
+        return False
     _SNAP[sid] = copy.deepcopy(s)
+    return True
+
+
+def must_save(s, replace=False):
+    """For commands (CLI, phone): a save that did not happen is an error to report, not to hide."""
+    if not save_sess(s, replace):
+        raise SaveBusy("usage-gate: session file is busy or unwritable, try again")
 
 
 # ---------- credentials & usage ----------
+def cred_file(svc):
+    cfg = os.environ.get("CLAUDE_CONFIG_DIR")
+    base = os.path.expanduser(cfg) if cfg else os.path.join(HOME, ".claude")
+    return os.path.join(base, ".credentials.json")
+
+
 def kc_read(svc):
+    if not has_keychain():  # Linux, Windows: the CLI keeps its login in a file; read-only, never refreshed (D12)
+        path = cred_file(svc)
+        try:
+            with open(path, encoding="utf-8-sig") as f:
+                return json.load(f)
+        except FileNotFoundError:
+            raise RuntimeError("no login: %s not found (run `claude /login`)" % path)
+        except (OSError, ValueError) as e:
+            raise RuntimeError("no login: cannot read %s (%s)" % (path, type(e).__name__))
     r = subprocess.run(["security", "find-generic-password", "-s", svc, "-w"], capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError("no keychain login '%s'" % svc)
@@ -590,7 +749,7 @@ def http(url, token=None, body=None):
 def refresh(svc, force=False):
     """Refresh a gate-managed login (one nothing else uses). Locked: refresh tokens rotate."""
     os.makedirs(CACHE, exist_ok=True)
-    with open(os.path.join(CACHE, "refresh.lock"), "w") as lk:
+    with open(os.path.join(CACHE, "refresh.lock"), "w", encoding="utf-8") as lk:
         if fcntl:
             fcntl.flock(lk, fcntl.LOCK_EX)
         cred = kc_read(svc)
@@ -617,7 +776,7 @@ def managed(svc):
 def fetch_usage(svc):
     o = kc_read(svc)["claudeAiOauth"]
     tok = o["accessToken"]
-    is_managed = managed(svc)
+    is_managed = has_keychain() and managed(svc)
     if is_managed and o.get("expiresAt", 0) / 1000 - now() < 600:
         tok = refresh(svc)
     try:
@@ -636,6 +795,13 @@ def fetch_usage(svc):
     return out
 
 
+def cache_write(path, data):
+    try:
+        wjson(path, data)
+    except OSError as e:  # a cache that cannot be written must never stop the reading being used (Windows)
+        log("usage cache write failed: %s" % type(e).__name__)
+
+
 def usage(svc, ttl):
     fake = os.environ.get("USAGE_GATE_FAKE")  # tests: "five_hour_pct,seven_day_pct"
     if fake:
@@ -650,10 +816,10 @@ def usage(svc, ttl):
         c = fetch_usage(svc)
     except Exception as e:
         err = {"ts": now(), "error": "%s: %s" % (type(e).__name__, e)}
-        wjson(path, err)
+        cache_write(path, err)
         log("usage error for %s: %s" % (svc, err["error"]))
         return err
-    wjson(path, c)
+    cache_write(path, c)
     return c
 
 
@@ -682,7 +848,7 @@ def figures(u):
 
 
 def session_service():
-    uuid = os.environ.get("CLAUDE_CODE_ACCOUNT_UUID")
+    uuid = os.environ.get("CLAUDE_CODE_ACCOUNT_UUID") if has_keychain() else None  # no keychain: the login file
     if uuid:
         acc = (rjson(CONFIG, {}) or {}).get("accounts", {})
         if uuid not in acc:
@@ -778,7 +944,7 @@ def msg_paused(s):
 
 def hook():
     try:
-        inp = json.load(sys.stdin)
+        inp = json.loads(sys.stdin.buffer.read().decode("utf-8-sig"))
     except Exception:
         sys.exit(0)
     ev = inp.get("hook_event_name", "PreToolUse")
@@ -827,8 +993,9 @@ def hook():
             save_sess(s)
             notify("Can't read usage for %s. Log in again." % (s.get("email") or s["service"]), s)
             out(ctx="usage-gate cannot read usage (%s). Tell the user in one line: log in again with "
+                    "%s. Gating is off until then; carry on." % (u["error"],
                     "`CLAUDE_CONFIG_DIR=~/.claude-appacct claude /login` (app account) or `claude /login` (CLI "
-                    "account). Gating is off until then; carry on." % u["error"], event="PostToolUse")
+                    "account)" if has_keychain() else "`claude /login`"), event="PostToolUse")
         sys.exit(0)
     if ev != "PreToolUse":
         sys.exit(0)
@@ -910,6 +1077,10 @@ def need(sid):
 
 
 def cmd_accounts(quiet=False):
+    if not has_keychain():
+        if not quiet:
+            print("usage-gate: no keychain on this machine; accounts are not mapped, the login file is used.")
+        return
     r = subprocess.run(["security", "dump-keychain"], capture_output=True, text=True)
     svcs = sorted(set(re.findall(r'"svce"<blob>="(Claude Code-credentials[^"]*)"', r.stdout)))
     cfg = rjson(CONFIG, {}) or {}
@@ -948,12 +1119,23 @@ def refresh_unmanaged_ok(svc):
 
 
 def main(argv):
+    try:
+        return main2(argv)
+    except SaveBusy as e:
+        raise SystemExit(str(e))
+
+
+def main2(argv):
     if not argv:
         print(__doc__)
         return
     c = argv[0]
     if c == "hook":
-        return hook()
+        try:
+            return hook()
+        except Exception as e:  # the hook must never exit non-zero: that would let a blocked tool run
+            log("hook failed: %s: %s" % (type(e).__name__, e))
+            sys.exit(0)
     if c == "accounts":
         return cmd_accounts()
     if c == "telegram":
@@ -968,7 +1150,7 @@ def main(argv):
              "soft": opt(argv, "--soft", old.get("soft", 80)), "hard": opt(argv, "--hard", old.get("hard", 95)),
              "ask": opt(argv, "--ask", old.get("ask", 10)), "phase": "run", "override": None,
              "armed_at": now(), "debug_keys": 0, "project": os.path.basename(os.getcwd())}
-        save_sess(s, replace=True)
+        must_save(s, replace=True)
         os.makedirs(note_dir(sid), exist_ok=True)
         u = usage(svc, 0)
         if "error" in u:
@@ -982,7 +1164,7 @@ def main(argv):
     s = need(sid)
     if c == "disarm":
         s.update(armed=False, manual=None)
-        save_sess(s)
+        must_save(s)
         print("Disarmed.")
     elif c == "status":
         u = usage(s["service"], HOOK_TTL)
@@ -992,7 +1174,7 @@ def main(argv):
         print(do_continue(s))
     elif c == "pause":
         s.update(phase="packing", told=None, override=None, manual=None)
-        save_sess(s)
+        must_save(s)
         u = usage(s["service"], HOOK_TTL)
         print(msg_pack(s, u) if "error" not in u else "Pack up, then run `%s wait` in the background." % SELF)
     elif c == "timer":
@@ -1007,13 +1189,13 @@ def main(argv):
                       % (s.get("phase"), instruction(s, seq0) or "Nothing to do."))
                 return
         s.update(phase="packing", told=None)
-        save_sess(s)
+        must_save(s)
         notify("No answer in %g min: packing up." % s["ask"], s)
         u = usage(s["service"], HOOK_TTL)
         print("usage-gate timer: no answer in %g min. %s" % (s["ask"], msg_pack(s, u) if "error" not in u else ""))
     elif c == "wait":
         s.update(phase="paused_hard" if s.get("phase") == "hard" else "paused_soft", told=None)
-        save_sess(s)
+        must_save(s)
         if s.get("manual"):  # owner's phone /stop or /pause holds regardless of usage
             notify("Session paused by you. It holds until you send /resume or /continue.", s)
         else:
@@ -1031,7 +1213,7 @@ def main(argv):
                 u = usage(s["service"], 0)
                 if "error" not in u and level(s, u) == "ok":
                     s.update(phase="run", override=None, told=None)
-                    save_sess(s)
+                    must_save(s)
                     notify("Limits reset (%s). Resuming." % figures(u), s, u)
                     print("USAGE GATE: limits are back below %g%% (%s). Resume now: read %s/RESUME.md and any "
                           "agent-*.md checkpoints there, then continue the plan (re-dispatch paused agents with "
