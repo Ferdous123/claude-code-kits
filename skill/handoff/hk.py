@@ -43,6 +43,12 @@ DEFAULTS = {
     "inline_under": 1000,
     "metrics": "docs/HK_METRICS.tsv",
     "learned": "docs/HK_LEARNED.md",
+    "procedure": None,
+    "checks": {},
+    "machines_check": None,
+    "external_refs": [],
+    "budget_ref": 0,
+    "budget_pack": 0,
 }
 
 VERSION = "4"
@@ -70,11 +76,13 @@ CHECK_MEANINGS = {
     "C15": "a learned file is over its caps or lacks evidence",
 }
 NAME_RE = re.compile(r"^[A-Za-z0-9._/][A-Za-z0-9._/-]*$")
-INT_KEYS = ["budget_handoff", "budget_boot", "read_budget", "inline_under"]
+INT_KEYS = ["budget_handoff", "budget_boot", "read_budget", "inline_under", "budget_ref",
+            "budget_pack"]
 PATH_KEYS = ["handoff", "context_map", "ledger", "briefs_dir", "decisions", "lessons_dir",
              "metrics", "learned"]
 LOCAL_LEDGER = ".hk/ledger.tsv"
 READS_LOG = ".hk/reads.tsv"
+JOBS_LOG = ".hk/jobs.tsv"
 LEDGER_COLUMNS = ["time", "machine", "commit", "dirty", "label", "exit",
                   "secs", "log_sha", "cmd", "row_sha"]
 
@@ -238,6 +246,26 @@ def parse_config(text):
         elif key in INT_KEYS:
             if not (isinstance(value, int) and not isinstance(value, bool) and value >= 0):
                 problem = "must be a non-negative integer"
+        elif key == "external_refs":
+            if not (isinstance(value, list)
+                    and all(isinstance(v, str) and os.path.isabs(v) for v in value)):
+                problem = "must be a list of absolute paths"
+        elif key == "checks":
+            if not (isinstance(value, dict) and all(
+                    isinstance(k, str) and k and isinstance(v, str) and v
+                    for k, v in value.items())):
+                problem = "must map label to command string"
+        elif key == "procedure":
+            if isinstance(value, str) and value:
+                pass
+            elif (isinstance(value, dict) and isinstance(value.get("path"), str)
+                  and value["path"]
+                  and (value.get("lines") is None
+                       or (isinstance(value["lines"], str)
+                           and re.match(r"^\d+-\d+$", value["lines"])))):
+                pass
+            else:
+                problem = 'must be a path or {"path": ..., "lines": "a-b"}'
         elif not (isinstance(value, str) and value):
             problem = "must be a non-empty string"
         elif key in PATH_KEYS:
@@ -433,6 +461,10 @@ def parse_ref(root, refstr, cfg=None):
     text = refstr.strip().strip("`").strip()
     forced = None
     head = re.split(r"[#@]", text, maxsplit=1)[0]
+    if cfg is not None and os.path.isabs(head) and norm_path(head) in [
+            norm_path(e) for e in cfg.get("external_refs", [])]:
+        path, kind, arg = split_ref(text)
+        return None, path, kind, arg
     if cfg is not None and ":" in head:
         if not cfg.get("_git", True):
             raise HkError("ref '%s': branch-qualified refs need a git repository" % refstr)
@@ -446,9 +478,40 @@ def parse_ref(root, refstr, cfg=None):
     return forced, path, kind, arg
 
 
+class ExternalMissing(HkError):
+    """A cited external_refs file does not exist on this machine (a warning, not a failure)."""
+
+
+def read_external(path):
+    """Return the text of an external_refs file; raise ExternalMissing if it is absent."""
+    if not os.path.isfile(path):
+        raise ExternalMissing("external ref %s not found on this machine" % path)
+    with open(path, "r", encoding="utf-8", errors="replace", newline="") as fh:
+        return fh.read().replace("\r\n", "\n")
+
+
+def is_external(cfg, path):
+    """True if path is an absolute file listed in cfg external_refs."""
+    return (cfg is not None and os.path.isabs(path)
+            and norm_path(path) in [norm_path(e) for e in cfg.get("external_refs", [])])
+
+
 def resolve_ref(root, refstr, gitref, cfg=None):
     """Return (path, content) for a ref; raise HkError if it does not resolve."""
     forced, path, kind, arg = parse_ref(root, refstr, cfg)
+    if is_external(cfg, path):
+        text = read_external(path)
+        if kind == "file":
+            return path, text
+        if kind == "tail":
+            lines = text.split("\n")
+            if lines and lines[-1] == "":
+                lines.pop()
+            return path, "\n".join(lines[-arg:] if arg > 0 else [])
+        try:
+            return path, extract_section(text, arg)
+        except HkError as err:
+            raise HkError("ref '%s': %s" % (refstr, err))
     if forced is not None:
         gitref = forced
     text = read_at(root, path, gitref)
@@ -647,7 +710,8 @@ def anchor_values(sections):
 
 def state_info(sections):
     """Return the State facts: main_line (first), main_lines, match (or None), anchor_change id, extra count."""
-    info = {"main_line": "", "main_lines": [], "match": None, "anchor_change": "", "extra": 0}
+    info = {"main_line": "", "main_lines": [], "match": None, "anchor_change": "", "extra": 0,
+            "running": []}
     if "State" not in sections:
         return info
     for line in sections["State"]["body"]:
@@ -658,6 +722,8 @@ def state_info(sections):
             info["main_lines"].append(stripped)
             if not info["main_line"]:
                 info["main_line"] = stripped
+        elif stripped.startswith("Running:"):
+            info["running"].append(stripped[len("Running:"):].strip())
         elif stripped.startswith("Anchor change:"):
             if not info["anchor_change"]:
                 info["anchor_change"] = stripped[len("Anchor change:"):].strip()
@@ -699,7 +765,7 @@ def check_pipe_lines(lines, label, skip_fields):
             continue
         if in_fence or " | " not in line or stripped.startswith("|"):
             continue
-        if skip_fields and re.match(r"^(Model|Branch|Touch|Done when|Read):", line):
+        if skip_fields and re.match(r"^(Model|Branch|Base|Touch|Done when|Read):", line):
             continue
         raise HkError("%s: line is not a table row: %s" % (label, stripped[:40]))
 
@@ -712,19 +778,25 @@ def parse_brief(text):
         raise HkError("brief: first line must be '# Brief: <id>'")
     fields = {}
     has_task = False
+    first_heading = None
     check_pipe_lines(lines, "brief %s" % match.group(1), True)
     for line in lines[1:]:
         if line.startswith("## "):
             if line.strip() == "## Task":
                 has_task = True
+            else:
+                first_heading = line.strip()
             break
-        field = re.match(r"^(Model|Branch|Touch|Done when|Read):[ \t]*(.*?)\s*$", line)
+        field = re.match(r"^(Model|Branch|Base|Touch|Done when|Read):[ \t]*(.*?)\s*$", line)
         if field:
             fields[field.group(1)] = field.group(2)
     for key in ("Model", "Branch", "Touch", "Done when"):
         if not fields.get(key):
             raise HkError("brief %s: field '%s' missing or empty" % (match.group(1), key))
     if not has_task:
+        if first_heading:
+            raise HkError("brief %s: '## Task' must be the first '##' section; the first is '%s'"
+                          % (match.group(1), first_heading))
         raise HkError("brief %s: '## Task' section missing" % match.group(1))
     done = [c.strip() for c in re.findall(r"`([^`]*)`", fields["Done when"]) if c.strip()]
     if not done:
@@ -732,11 +804,17 @@ def parse_brief(text):
     branch = fields["Branch"].replace("`", "").strip()
     if not valid_name(branch):
         raise HkError("brief %s: bad branch name '%s'" % (match.group(1), branch))
+    touch = split_list(fields["Touch"], ",")
+    for item in touch:
+        if re.search(r"[\s()\"'`;|<>]", item):
+            raise HkError("brief %s: Touch item '%s' is not a glob (globs only, comma-separated)"
+                          % (match.group(1), item))
     return {
         "id": match.group(1),
         "model": fields["Model"],
         "branch": branch,
-        "touch": split_list(fields["Touch"], ","),
+        "base": fields.get("Base", "").replace("`", "").strip(),
+        "touch": touch,
         "done": done,
         "read": split_list(fields.get("Read", ""), ";"),
     }
@@ -959,6 +1037,11 @@ def build_boot(root, cfg, gitref, strict):
         ref = cells[0]
         try:
             _, content = resolve_ref(root, ref, gitref, cfg)
+        except ExternalMissing as err:
+            warn = "WARN %s" % err
+            chunks.append(warn)
+            sizes.append((ref, len(warn)))
+            continue
         except HkError:
             if strict:
                 raise
@@ -1069,7 +1152,10 @@ def cmd_get(args):
             raise HkError("refused: %s is on the Never read list" % path)
     results = []
     for ref in args.refs:
-        results.append((ref,) + resolve_ref(root, ref, args.ref, cfg))
+        try:
+            results.append((ref,) + resolve_ref(root, ref, args.ref, cfg))
+        except ExternalMissing as err:
+            emit("WARN %s" % err)
     for ref, path, content in results:
         emit(ref_block(ref, content))
         log_read(root, path, len(content), ref=ref)
@@ -1091,7 +1177,11 @@ def cmd_for(args):
     total = 0
     out = []
     for ref in refs:
-        _, content = resolve_ref(root, ref, None, cfg)
+        try:
+            _, content = resolve_ref(root, ref, None, cfg)
+        except ExternalMissing as err:
+            out.append("WARN %s" % err)
+            continue
         total += len(content)
         if args.print:
             out.append(ref_block(ref, content))
@@ -1100,6 +1190,34 @@ def cmd_for(args):
     out.append("TOTAL %d chars" % total)
     emit("\n".join(out))
     return 0
+
+
+def procedure_block(root, cfg, warns):
+    """Return the hk.json procedure text as a ref block, or '' (a WARN when an absolute file is absent)."""
+    proc = cfg.get("procedure")
+    if not proc:
+        return ""
+    if isinstance(proc, str):
+        path, lines = proc, None
+    else:
+        path, lines = proc["path"], proc.get("lines")
+    if os.path.isabs(path):
+        try:
+            text = read_external(path)
+        except ExternalMissing as err:
+            warns.append("WARN procedure: %s" % err)
+            return ""
+    else:
+        check_ref_path(path, norm_path(path))
+        text = read_at(root, path, None)
+        if text is None:
+            raise HkError("procedure file %s not found" % path)
+    label = "procedure %s" % path
+    if lines:
+        first, last = [int(n) for n in lines.split("-")]
+        text = "\n".join(text.split("\n")[max(first - 1, 0):last])
+        label += " lines %s" % lines
+    return ref_block(label, text)
 
 
 def cmd_pack(args):
@@ -1118,11 +1236,23 @@ def cmd_pack(args):
     refs = dedupe(refs)
     chunks = [brief_text.rstrip("\n"), anchor_text]
     sizes = [("brief", len(brief_text)), ("anchor", len(anchor_text))]
+    warns = []
     for ref in refs:
-        _, content = resolve_ref(root, ref, None, cfg)
+        try:
+            _, content = resolve_ref(root, ref, None, cfg)
+        except ExternalMissing as err:
+            warns.append("WARN %s" % err)
+            continue
         block = ref_block(ref, content)
+        if cfg["budget_ref"] and len(block) > cfg["budget_ref"]:
+            warns.append("WARN ref %s is %d chars > budget_ref %d; cite a file#section"
+                         % (ref, len(block), cfg["budget_ref"]))
         chunks.append(block)
         sizes.append((ref, len(block)))
+    block = procedure_block(root, cfg, warns)
+    if block:
+        chunks.append(block)
+        sizes.append(("procedure", len(block)))
     chunks.append(REPORT_SHAPE)
     sizes.append(("report", len(REPORT_SHAPE)))
     total = len("\n".join(chunks)) + 1
@@ -1131,6 +1261,11 @@ def cmd_pack(args):
             emit("%s: %d" % (name, size))
     else:
         emit("\n".join(chunks))
+    for warn in warns:
+        emit(warn)
+    if cfg["budget_pack"] and total > cfg["budget_pack"]:
+        emit("PACK %d chars > budget_pack %d" % (total, cfg["budget_pack"]))
+        return 1
     emit("PACK %d chars" % total)
     return 0
 
@@ -1139,9 +1274,20 @@ def cmd_run(args):
     """hk run: run a command, log it, record a ledger row, print the tail and RESULT line."""
     root, cfg = setup()
     need_git(cfg["_git"])
-    if not args.command_tail:
-        raise HkError("run needs a command after --")
-    command = join_command(args.command_tail)
+    if args.command_tail:
+        command = join_command(args.command_tail)
+    elif args.label in cfg["checks"]:
+        command = cfg["checks"][args.label]
+    else:
+        raise HkError("run needs a command after -- (or a '%s' entry in hk.json checks); "
+                      "nothing was run" % args.label)
+    if cfg["machines_check"]:
+        proc = subprocess.run(cfg["machines_check"], shell=True, cwd=root,
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+        if proc.returncode != 0:
+            tail = proc.stdout.decode("utf-8", "replace").strip().split("\n")[-3:]
+            raise HkError("machines_check failed (exit %d), not running: %s"
+                          % (proc.returncode, " / ".join(t.strip() for t in tail if t.strip())))
     code, output, result = execute_run(root, args.label, command, args.record,
                                        cfg["ledger"])
     lines = output.split("\n")
@@ -1163,6 +1309,35 @@ def branch_ref(root, cfg, name):
     return None
 
 
+def scope_files(root, brief, integration, task_ref):
+    """Return the files a branch changed, measured from the brief's Base or the branch's fork point.
+
+    When the branch later merged the integration branch, only its own first-parent commits count."""
+    if brief.get("base"):
+        base = rev_parse(root, brief["base"])
+        if base is None:
+            raise HkError("brief %s: Base '%s' is not a commit" % (brief["id"], brief["base"]))
+    else:
+        own = git_lines(root, ["rev-list", "--first-parent", task_ref, "--not", integration])
+        base = None
+        if own:
+            parents = git_out(root, ["rev-list", "--parents", "-n", "1", own[-1]]).split()
+            base = parents[1] if len(parents) > 1 else None
+        if base is None:
+            base = git_out(root, ["merge-base", integration, task_ref])
+    span = "%s..%s" % (base, task_ref)
+    merges = git_lines(root, ["rev-list", "--first-parent", "--merges", span])
+    if not merges:
+        return git_lines(root, ["diff", "--name-only", "--no-renames", span, "--"])
+    files = []
+    for sha in git_lines(root, ["rev-list", "--first-parent", "--no-merges", span]):
+        for f in git_lines(root, ["diff-tree", "-r", "--no-commit-id", "--name-only",
+                                  "--no-renames", "--root", sha]):
+            if f not in files:
+                files.append(f)
+    return sorted(files)
+
+
 def cmd_verify(args):
     """hk verify: check a finished branch stays inside the brief's Touch globs, then run Done when."""
     root, cfg = setup()
@@ -1177,9 +1352,7 @@ def cmd_verify(args):
     integration = branch_ref(root, cfg, cfg["branch"])
     if integration is None:
         raise HkError("integration branch %s not found" % cfg["branch"])
-    base = git_out(root, ["merge-base", integration, task_ref])
-    files = git_lines(root, ["diff", "--name-only", "--no-renames",
-                                   "%s..%s" % (base, task_ref), "--"])
+    files = scope_files(root, brief, integration, task_ref)
     failed = False
     offenders = [f for f in files if not any(glob_match(g, f) for g in brief["touch"])]
     for offender in offenders:
@@ -1272,6 +1445,12 @@ def cmd_facts(args):
             counts[fields[3]] += 1
     for path in order:
         out.append("  %s x%d" % (path, counts[path]))
+    jobs_text = read_at(root, JOBS_LOG, None)
+    jobs = [l for l in (jobs_text or "").split("\n") if l.strip()]
+    if jobs:
+        out.append("jobs (%s, last 10 of %d)" % (JOBS_LOG, len(jobs)))
+        for line in jobs[-10:]:
+            out.append("  " + line.replace("\t", " | "))
     out.append("worktrees:")
     for path in worktree_paths(root):
         out.append("  %s %d changed" % (path, status_count(path)))
@@ -1481,6 +1660,8 @@ def check_c7(ctx):
         for cells in section_rows(ctx["sections"], name):
             try:
                 resolve_ref(ctx["root"], cells[-1], ctx["tip"], ctx["cfg"])
+            except ExternalMissing as err:
+                ctx["warns"].append("WARN C7 %s" % err)
             except HkError as err:
                 msgs.append("%s: %s" % (name, err))
     return msgs

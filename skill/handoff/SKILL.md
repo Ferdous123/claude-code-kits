@@ -6,7 +6,7 @@ description: End-of-session handoff for any project. Run at the end of every wor
 
 Goal: a fresh session, on another machine, with no transcript, runs one command, reads its short output and continues without re-investigating anything and without loading the project. A handoff that is not pushed has not happened. No narration while doing this; work through the steps and report at the end.
 
-`hk` below means `python3 <this skill's folder>/hk.py`. Whatever a rule can check, `hk` checks. Do not repeat its checks by reading files, and do not argue with a `FAIL`: fix the cause. File formats are in `FORMAT.md` beside this file; open it only when writing one of those files.
+`hk` below means `python3 <this skill's folder>/hk.py`. Whatever a rule can check, `hk` checks. Do not repeat its checks by reading files, and do not argue with a `FAIL`: fix the cause. File formats are in `FORMAT.md` beside this file; open it only when writing one of those files. Optional `hk.json` keys (`procedure`, `checks`, `machines_check`, `external_refs`, `budget_ref`, `budget_pack`, `doc_paths`) and the State `Running:` line are described there.
 
 ## 0. Project rules first
 
@@ -65,7 +65,7 @@ These live in the project's fixed start prompt, not in the handoff.
 3. The orchestrator plans, briefs, reads verdicts and integrates. It does not explore: a question about the codebase goes to the code map if there is one, otherwise to an agent on the smallest model, answered in 15 lines at most with `file:line`.
 4. Every task is a brief file. The spawn prompt is three lines: run `hk pack <brief>`, do what it says, reply in its report shape. State the model on every spawn: smallest for mechanical work, middle for writing code, strongest for review and design.
 5. When an agent finishes: `hk verify <brief>`. Read its verdict lines before the agent's report.
-6. Long commands go through `hk run`. Read the tail it prints; search the log file if more is needed.
+6. Long commands go through `hk run` (`hk run full` uses the project's `checks.full`). Read the tail it prints; search the log file if more is needed. A refusal from `machines_check` means a required machine is down: fix that, never skip it.
 7. Two failed acceptance runs move a task one model up, with the failing log attached. Never a third try on the same model. Note model and outcome in the session log.
 8. Before each step and after each merge, re-read the Anchor. Work the Next table does not call for goes to the backlog.
 9. Hand off at the next clean point when the owner says so, when the read-budget notice appears, after the conversation has been summarised once, or when a gate passes.

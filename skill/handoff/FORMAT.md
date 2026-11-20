@@ -13,7 +13,7 @@ Wherever a file is cited:
 | `path@tail:N` | the last N lines |
 | `branch:path…` | any of the above, read from that branch on the remote (for files that exist only on a parked branch) |
 
-Paths are relative to the repository root. No absolute paths, no `..`, no leading `-`.
+Paths are relative to the repository root. No absolute paths, no `..`, no leading `-`. One exception: an absolute path listed in `hk.json` `external_refs` (a process guide kept outside the repository) may be cited in Read first and Read when. It is read from the local disk; on a machine where the file is absent `hk boot`, `hk pack` and `hk check` print a WARN and go on.
 
 ## `docs/HANDOFF.md`
 
@@ -33,6 +33,7 @@ Decides: <who>
 ## State
 Main: <branch> @ <sha> check:<pass|fail|not-run>
 Anchor change: <decision id>     (only when Goal, Workflow, Out of scope or Decides changed)
+Running: <job, machine, where its output goes>     (zero or more; detached jobs the next session must know; not counted in the 10)
 <up to 10 more lines>
 
 ## Next
@@ -73,7 +74,7 @@ Rules the checker applies:
 
 - **Size.** The file stays under `budget_handoff` characters; `hk boot` output stays under `budget_boot`.
 - **Anchor.** Goal, Workflow, Out of scope and Decides must equal the previous handoff's, unless State has `Anchor change: <id>` and that id is in the decision log. Milestone and Ends when may change when a gate passes.
-- **State.** `<sha>` is the commit the main check ran on. Only documentation paths (`doc_paths`) may change between it and the pushed tip. `check:pass` needs a ledger pass row for that commit with the label in `main_check`.
+- **State.** `<sha>` is the commit the main check ran on. Only documentation paths (`doc_paths`: folders ending in `/`, or single files such as `.gitignore`) may change between it and the pushed tip. `check:pass` needs a ledger pass row for that commit with the label in `main_check`.
 - **Next.** At least one row. Row 1 names a brief in the brief format and a model. Later rows may leave Brief empty.
 - **Read first, Read when.** Every ref must resolve in the pushed state. A file cited here may be opened even if it sits under a Never-read folder.
 - **Exists.** Status is a word tied to an artefact, never `done`. Evidence is `<sha>` (the commit exists on the remote) or `check:<sha>` (and the ledger holds a pass row for it). Paths is a comma-separated list of globs the piece covers; if any of them changed after the evidence commit, the row fails as *changed since verified*.
@@ -86,6 +87,7 @@ Rules the checker applies:
 # Brief: <id>
 Model: <smallest|middle|strongest or a model name>
 Branch: <branch>
+Base: <commit or ref>       (optional; scope is measured from it)
 Touch: <glob>, <glob>
 Done when: `<command>` `<second command>`
 Read: <ref>; <ref>          (optional; added to what the context map gives)
@@ -95,6 +97,10 @@ Read: <ref>; <ref>          (optional; added to what the context map gives)
 ```
 
 `hk pack` hands this to the agent with its reading. `hk verify` checks that the branch changed only files matching Touch, then runs each Done-when command in order.
+
+- `## Task` must be the first `##` section; any other first heading is an error that names it.
+- Every Touch item must be a glob (no spaces or quotes); prose in Touch fails with the item named.
+- `hk verify` measures scope from `Base:` if given, else from the commit where the branch left the integration branch; when the branch later merged the integration branch, only its own commits count, so merged-in files are not SCOPE FAIL.
 
 ## `docs/CONTEXT_MAP.md`
 
@@ -121,6 +127,13 @@ Written only by `hk run <label> --record -- <command>`. Never edit it: each row 
 | `doc_paths` | `["docs/", "START_PROMPT.md"]` |
 | `budget_handoff`, `budget_boot`, `read_budget` | 12000, 40000, 400000 characters |
 | `main_check` | `full` |
+| `procedure` | none. A file, or `{"path": ..., "lines": "21-29"}` (absolute or repo-relative); appended to every `hk pack` |
+| `checks` | `{}`. Label to command, e.g. `{"full": "./check.sh"}`; `hk run full` with no `--` command runs it. `hk run` with no command and no entry exits non-zero |
+| `machines_check` | none. A command run before `hk run`; if it fails, `hk run` refuses to start and prints why |
+| `external_refs` | `[]`. Absolute paths that Read first / Read when may cite (see Refs) |
+| `budget_ref`, `budget_pack` | 0 (off). `hk pack` WARNs for each ref above `budget_ref` characters (cite `file#section` instead) and FAILs (exit 1) when the pack is above `budget_pack` |
+
+`hk facts` also lists the last 10 rows of `.hk/jobs.tsv` (free tab-separated rows for detached jobs) beside the State `Running:` lines.
 
 ## Hooks (`.claude/settings.json`)
 

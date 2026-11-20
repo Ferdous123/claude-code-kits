@@ -2054,5 +2054,211 @@ class TestRound4(HookCase):
         self.assertOk()
 
 
+class TestRound5(ProjectCase):
+    """Round 5: kit issues of 2026-11-20 (procedure, Touch globs, checks, budgets, Base, headings, jobs, machines, external refs)."""
+
+    def config(self, commit=False, **kw):
+        """Write hk.json with the given keys: hidden from git status, or committed and pushed."""
+        import json
+        if commit:
+            kw.setdefault("doc_paths", ["docs/", "START_PROMPT.md", "hk.json"])
+        else:
+            self.exclude("hk.json")
+        self.p.write("hk.json", json.dumps(kw))
+        if commit:
+            self.p.commit_push("hk.json")
+
+    def py(self, code):
+        """Return a shell command string running Python code."""
+        return '"%s" -c "%s"' % (sys.executable, code)
+
+    # -- 1. procedure -------------------------------------------------------
+
+    def test_i1_procedure_lines_appended_to_pack(self):
+        """1: hk.json procedure (path + lines) is appended to every pack."""
+        self.p.write("docs/proc.md", "line1\nRED FIRST\nOUTCOME MAP\nline4\n")
+        self.config(procedure={"path": "docs/proc.md", "lines": "2-3"})
+        code, out, err = self.p.hk("pack", "task-1")
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("RED FIRST\nOUTCOME MAP", out)
+        self.assertNotIn("line1", out)
+        self.assertNotIn("line4", out)
+
+    def test_i1_procedure_absolute_file_whole(self):
+        """1: a plain string procedure may be an absolute file, appended whole."""
+        ext = os.path.join(self.tmp, "wave.txt")
+        with open(ext, "w") as fh:
+            fh.write("DISCIPLINE TEXT\n")
+        self.config(procedure=ext)
+        code, out, err = self.p.hk("pack", "task-1")
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("DISCIPLINE TEXT", out)
+
+    # -- 2. Touch globs -----------------------------------------------------
+
+    def test_i2_touch_prose_fails_with_item(self):
+        """2: a Touch item that is prose is a FAIL naming the item."""
+        self.p.replace("docs/briefs/task-1.md", "Touch: src/**, tests/**",
+                       "Touch: ONLY the module src/x.py, tests/**")
+        code, out, err = self.p.hk("pack", "task-1")
+        self.assertEqual(code, 2, out)
+        self.assertIn("Touch", err)
+        self.assertIn("ONLY the module src/x.py", err)
+
+    # -- 3. checks map ------------------------------------------------------
+
+    def test_i3_run_resolves_label_from_checks(self):
+        """3: hk run full with no command uses hk.json checks.full."""
+        self.config(checks={"full": self.py("print(42)")})
+        code, out, err = self.p.hk("run", "full")
+        self.assertEqual(code, 0, out + err)
+        self.assertIn("42", out)
+        self.assertEqual(hk.parse_ledger(self.p.read(".hk/ledger.tsv"))[0][4], "full")
+
+    def test_i3_run_without_command_exits_nonzero(self):
+        """3: no command and no checks entry never exits 0, also with an empty --."""
+        for args in (("run", "full"), ("run", "full", "--"), ("run", "other")):
+            code, out, err = self.p.hk(*args)
+            self.assertNotEqual(code, 0, args)
+        self.config(checks={"full": self.py("print(1)")})
+        code, out, err = self.p.hk("run", "other")
+        self.assertNotEqual(code, 0)
+
+    # -- 4. budgets ---------------------------------------------------------
+
+    def test_i4_budget_ref_warns_and_budget_pack_fails(self):
+        """4: refs above budget_ref WARN; a pack above budget_pack FAILs."""
+        self.config(budget_ref=10)
+        code, out, err = self.p.hk("pack", "task-1")
+        self.assertEqual(code, 0, out + err)
+        self.assertRegex(out, r"WARN ref docs/arch.md#Overview is \d+ chars > budget_ref 10")
+        self.config(budget_pack=50)
+        code, out, err = self.p.hk("pack", "task-1")
+        self.assertEqual(code, 1, out)
+        self.assertRegex(out, r"PACK \d+ chars > budget_pack 50")
+
+    # -- 5. verify base -----------------------------------------------------
+
+    def merged_branch(self, base_field):
+        """task-1 forks, main moves on, task-1 merges main, local main is then left behind."""
+        self.p.git("checkout", "-q", "-b", "task-1")
+        self.p.write("src/new.py", "x\n")
+        self.p.commit("task work")
+        self.p.git("checkout", "-q", "main")
+        self.p.write("README.md", "other card\n")
+        self.p.commit("other card on main")
+        self.p.git("checkout", "-q", "task-1")
+        self.p.git("merge", "-q", "--no-edit", "main")
+        self.p.git("update-ref", "refs/heads/main", self.p.s2)
+        if base_field:
+            self.p.replace("docs/briefs/task-1.md", "Touch:", "Base: %s\nTouch:" % self.p.s2)
+            self.p.commit("brief base")
+
+    def test_i5_verify_ignores_merged_in_integration_files(self):
+        """5: files merged in from the integration branch are not SCOPE FAIL (fork point)."""
+        self.merged_branch(False)
+        code, out, _ = self.p.hk("verify", "docs/briefs/task-1.md")
+        self.assertIn("SCOPE ok (1 files)", out)
+        self.assertNotIn("SCOPE FAIL", out)
+
+    def test_i5_verify_uses_base_field(self):
+        """5: a Base: field names the commit the scope is measured from."""
+        self.merged_branch(True)
+        code, out, _ = self.p.hk("verify", "docs/briefs/task-1.md")
+        self.assertNotIn("SCOPE FAIL README.md", out)
+        self.assertIn("SCOPE", out)
+        self.assertNotIn("SCOPE FAIL", out.replace("SCOPE FAIL docs/briefs/task-1.md", ""))
+
+    # -- 6. brief heading rule ----------------------------------------------
+
+    def test_i6_task_not_first_names_heading(self):
+        """6: when ## Task is not the first ## section the error names the first heading."""
+        self.p.replace("docs/briefs/task-1.md", "## Task", "## Procedure\nx\n\n## Task")
+        code, out, err = self.p.hk("pack", "task-1")
+        self.assertEqual(code, 2)
+        self.assertIn("## Procedure", err)
+        self.assertIn("first", err)
+
+    # -- 7. doc_paths files -------------------------------------------------
+
+    def test_i7_doc_paths_may_list_files(self):
+        """7: doc_paths may name a file such as .gitignore; FORMAT.md says so."""
+        self.point_state_at_head()
+        self.p.write(".gitignore", ".hk/\n*.tmp\n")
+        self.p.commit_push("ignore tmp")
+        self.assertFails("C5")
+        self.config(commit=True, doc_paths=["docs/", "hk.json", ".gitignore"])
+        self.assertOk()
+        fmt = os.path.join(os.path.dirname(HK), "FORMAT.md")
+        with open(fmt, encoding="utf-8") as fh:
+            self.assertIn(".gitignore", fh.read())
+
+    # -- 8. Running / jobs --------------------------------------------------
+
+    def test_i8_running_line_and_jobs_in_facts(self):
+        """8: State may carry Running: lines (not counted as extra); facts lists .hk/jobs.tsv."""
+        text = self.p.read("docs/HANDOFF.md")
+        text = text.replace("check:pass\n", "check:pass\n" + "".join(
+            "Running: job %d on pc\n" % i for i in range(12)), 1)
+        self.p.write("docs/HANDOFF.md", text)
+        self.p.commit_push("running")
+        self.assertOk()
+        sections, _ = hk.parse_handoff(text)
+        self.assertEqual(len(hk.state_info(sections)["running"]), 12)
+        self.p.write(".hk/jobs.tsv", "started\tmachine\tjob\n2026-11-20\tpc\tocr batch 3\n")
+        code, out, err = self.p.hk("facts")
+        self.assertEqual(code, 0, err)
+        self.assertIn("jobs (.hk/jobs.tsv", out)
+        self.assertIn("ocr batch 3", out)
+
+    # -- 9. machines_check --------------------------------------------------
+
+    def test_i9_machines_check_refuses_run(self):
+        """9: a failing machines_check stops hk run before the command and the ledger row."""
+        self.config(machines_check=self.py("print('pc offline'); import sys; sys.exit(3)"))
+        code, out, err = self.p.hk("run", "x", "--", *OK_CMD)
+        self.assertEqual(code, 2, out)
+        self.assertIn("machines_check", err)
+        self.assertIn("pc offline", err)
+        self.assertFalse(os.path.exists(self.p.path(".hk/ledger.tsv")))
+        self.config(machines_check=self.py("print('up')"))
+        code, out, err = self.p.hk("run", "x", "--", *OK_CMD)
+        self.assertEqual(code, 0, out + err)
+
+    # -- 10. external refs --------------------------------------------------
+
+    def external(self):
+        """Create an outside file and cite it from Read first; return its path."""
+        ext = os.path.join(self.tmp, "GUIDE.md")
+        with open(ext, "w") as fh:
+            fh.write("# Guide\n\n## Rules\nOUTSIDE RULES\n")
+        self.p.replace("docs/HANDOFF.md", "| docs/arch.md |", "| docs/arch.md |\n| `%s#Rules` |" % ext)
+        self.p.commit_push("cite external")
+        return ext
+
+    def test_i10_external_ref_resolves_locally(self):
+        """10: a Read first ref to a listed absolute path is read locally; unlisted stays refused."""
+        ext = self.external()
+        code, out, err = self.p.hk("boot")
+        self.assertEqual(code, 2, out)
+        self.assertIn("absolute", err)
+        self.config(commit=True, external_refs=[ext])
+        code, out, err = self.p.hk("boot")
+        self.assertEqual(code, 0, err)
+        self.assertIn("OUTSIDE RULES", out)
+        self.assertOk()
+
+    def test_i10_external_ref_missing_is_a_warning(self):
+        """10: on a machine without the file, boot and check WARN instead of failing."""
+        ext = self.external()
+        self.config(commit=True, external_refs=[ext])
+        os.remove(ext)
+        code, out, err = self.p.hk("boot")
+        self.assertEqual(code, 0, err)
+        self.assertIn("WARN external ref", out)
+        out = self.assertOk()
+        self.assertIn("WARN C7", out)
+
+
 if __name__ == "__main__":
     unittest.main()
