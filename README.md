@@ -1,4 +1,13 @@
-# handoff-kit
+# claude-code-kits
+
+Skills and tools for working with Claude Code. Each kit stands alone.
+
+| Kit | What it does |
+|---|---|
+| [handoff](#handoff) | End-of-session handoffs a fresh session on any machine continues from, checked by `hk.py` |
+| [usage-gate](usage-gate/README.md) | Stops sessions cleanly near the 5-hour or weekly plan limit and resumes after the reset; optional Telegram alerts and phone commands |
+
+## handoff
 
 A Claude Code skill for end-of-session handoffs, plus one Python tool, `hk.py`.
 
@@ -8,13 +17,13 @@ A Claude Code skill for end-of-session handoffs, plus one Python tool, `hk.py`.
 - `hk check` reads the handoff from the pushed git state, as a fresh clone would see it.
 - A new session on any machine then continues from git alone.
 
-## Install
+### Install
 
 Copy the `skill/handoff` folder to `~/.claude/skills/handoff/` (all projects) or to
 `<your project>/.claude/skills/handoff/` (one project). `hk` runs from anywhere
 inside a git repository: `python3 <skill folder>/hk.py <command>`.
 
-## Commands
+### Commands
 
 Details are in [docs/SPEC.md](docs/SPEC.md); file formats are in `skill/handoff/FORMAT.md`.
 
@@ -38,17 +47,17 @@ Details are in [docs/SPEC.md](docs/SPEC.md); file formats are in `skill/handoff/
 | `hook-read` | Hook for `PreToolUse` on `Read|Grep|Glob`: tracks reading against a budget. |
 | `hook-anchor` | Hook for `SessionStart` after compaction: re-prints the anchor and the next step. |
 
-## Tests
+### Tests
 
 From the repository root (takes a few minutes):
 
     python3 -m unittest discover -s tests
 
-## Requirements
+### Requirements
 
 Python 3.8 or newer (standard library only) and git.
 
-## Status
+### Status
 
 - 169 tests pass on macOS with Python 3.15.
 - Not tested on Windows.
