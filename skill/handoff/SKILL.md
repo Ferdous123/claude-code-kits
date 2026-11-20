@@ -34,7 +34,7 @@ The only part that comes from this session's memory. `.hk/delta.md`, 40 lines at
 2. Lessons: one line per mistake with its area. Keep the newest 30 in the lessons file; move older lines to the area files. A lesson seen twice becomes a check or a test, noted as a next step. Offer lessons that apply beyond this project for the assistant's persistent memory.
 3. Machines file: update this machine's entry if anything changed.
 4. Decision log: this session's decisions, with ids.
-5. Tune: run `hk learned` and follow its notes, then `hk tune`. It prints at most 12 proposals, each with its evidence from earlier handoffs. Apply the ones that change the read map, the context map or a learned-notes file (add, drop, retire). Never apply one by editing `hk.py`, `SKILL.md` or `FORMAT.md`: a proposal you think calls for that goes to the owner in the reply. Do not add a learned note without the evidence `hk tune` printed.
+5. Tune: run `hk learned` and follow its notes, then `hk tune`. It prints at most 12 proposals, each with its evidence from earlier handoffs. Apply the ones that change the read map, the context map or a learned-notes file (add, drop, retire). Changes to `hk.py`, `SKILL.md` or `FORMAT.md` follow section 10, never a tune proposal applied in place. Do not add a learned note without the evidence `hk tune` printed.
 
 ## 5. Write the handoff from evidence
 
@@ -77,3 +77,15 @@ Only: the handoff path; the `HANDOFF OK` line; pushed branches with their commit
 ## Installing
 
 Copy this folder (`SKILL.md`, `hk.py`, `FORMAT.md`) to a project's `.claude/skills/handoff/` or to `~/.claude/skills/handoff/`. It names no project. It needs Python 3.8 or later and git.
+
+## 10. The kit improves itself (owner standing approval, 2026-11-20)
+
+Any session that finds a fault in this kit fixes it, so every iteration is better than the last: at boot (a ref that
+does not resolve, a missing fact the next step needed), mid-session (a pack that left out what an agent needed, a
+false FAIL or a check that passed when it should not have), or at handoff (anything `hk check` or the cold-start test
+exposed). Fix it in the kit's source repository (the `kit_source` key in `hk.json`, else ask where it lives), test
+first: a unittest that fails before the fix, the whole suite green after; keep it project-neutral and every new
+`hk.json` key optional. Then reinstall the copy the session uses, commit in the kit repository as the configured
+user, and record the fault and the fix in the handoff's Decisions line and the project's lessons file. Do not push
+the kit repository unless the owner says so. Faults found but not fixed go to the handoff's Findings.
+
