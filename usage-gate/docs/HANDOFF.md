@@ -9,7 +9,7 @@ Out of scope: gating sessions that never ran /usage-gate; any token-costing usag
 Decides: owner
 
 ## State
-Main: main @ 5546395 check:pass
+Main: main @ fdff698 check:pass
 Live on the Mac 2026-11-21 17:10: soft limit tells instead of blocking (call ran; context arrived on PreToolUse and again on PostToolUse); Telegram Continue button applied to its own session only (phase run, override soft); `/` menu set.
 Merged: soft-tells D21 (5546395, 169 tests): only NEW_WORK refused at soft; paused_hard and past-hard pauses block like a hard stop; refused calls logged to blocked.md, archived on resume.
 Installed copy matches 5546395. Public copy committed in ~/Developer/handoff-kit as dbc17fa, NOT pushed (owner asks before every public push).
@@ -61,15 +61,15 @@ Not verified live: 429 back-off (no 429 since), reexec on update, Linux (DGX Spa
 ## Exists
 | Piece | Status | Evidence | Paths |
 |---|---|---|---|
-| Gate hook + commands | tested (169 tests), live on the Mac; not run on Linux or Windows | check:5546395 | usage-gate/gate.py |
-| /usage-gate skill | installed, used live in both apps on the Mac | check:5546395 | usage-gate/skill/** |
-| Installer (shell) | ran on the Mac earlier, copy matched | check:5546395 | usage-gate/install.sh |
-| Installer (python) | tested (atomic copy); ran on the Mac with absolute hook paths; not run on Linux or Windows | check:5546395 | usage-gate/install.py |
-| 429 handling | tested; back-off holds; arm read usage live on the Mac | check:5546395 | usage-gate/gate.py |
-| Telegram alerts + commands | tested with fake server; alerts live from phone on the Mac | check:5546395 | usage-gate/gate.py, usage-gate/tests/** |
-| Telegram buttons + menu | tested with fake server; menu set live; Continue button live-verified 2026-11-21 | check:5546395 | usage-gate/gate.py |
-| reexec-on-update | tested (169 tests); not run live | check:5546395 | usage-gate/gate.py, usage-gate/install.py |
-| Soft tells (D21) + blocked.md | tested; soft tell live on the Mac | check:5546395 | usage-gate/gate.py, usage-gate/skill/** |
+| Gate hook + commands | tested (169 tests), live on the Mac; not run on Linux or Windows | check:fdff698 | usage-gate/gate.py |
+| /usage-gate skill | installed, used live in both apps on the Mac | check:fdff698 | usage-gate/skill/** |
+| Installer (shell) | ran on the Mac earlier, copy matched | check:fdff698 | usage-gate/install.sh |
+| Installer (python) | tested (atomic copy); ran on the Mac with absolute hook paths; not run on Linux or Windows | check:fdff698 | usage-gate/install.py |
+| 429 handling | tested; back-off holds; arm read usage live on the Mac | check:fdff698 | usage-gate/gate.py |
+| Telegram alerts + commands | tested with fake server; alerts live from phone on the Mac | check:fdff698 | usage-gate/gate.py, usage-gate/tests/** |
+| Telegram buttons + menu | tested with fake server; menu set live; Continue button live-verified 2026-11-21 | check:fdff698 | usage-gate/gate.py |
+| reexec-on-update | tested (169 tests); not run live | check:fdff698 | usage-gate/gate.py, usage-gate/install.py |
+| Soft tells (D21) + blocked.md | tested; soft tell live on the Mac | check:fdff698 | usage-gate/gate.py, usage-gate/skill/** |
 
 ## Parked
 | Branch | Tip | Verified | Not verified | Next |
