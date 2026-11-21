@@ -14,7 +14,7 @@ Follow the project's own handoff rules (`START_PROMPT.md`, `CLAUDE.md`, a build 
 
 ## 1. Settle everything in flight
 
-1. List running agents and background commands. For each: wait for it, or stop it and record exactly where it stopped. Never report an agent's result before it arrives.
+1. Never write the handoff while tasks are still running or unfinished. List running agents and background commands; wait for each, and let unfinished slices finish. Stop one only if the owner says so, and then record exactly where it stopped. A long detached job on another machine is the exception: record it with its resume steps in a `Running:` line. Never report an agent's result before it arrives.
 2. For each finished task run `hk verify <brief>`. Decide its state from that and from the ledger, not from the agent's report:
    - **merged**: reviewed by a different agent, fixes applied, and a pass row for the exact commit made by `hk run` in a checkout no agent was writing to.
    - **parked on a branch**: anything short of that. Push the branch.
@@ -88,4 +88,5 @@ first: a unittest that fails before the fix, the whole suite green after; keep i
 `hk.json` key optional. Then reinstall the copy the session uses, commit in the kit repository as the configured
 user, and record the fault and the fix in the handoff's Decisions line and the project's lessons file. Do not push
 the kit repository unless the owner says so. Faults found but not fixed go to the handoff's Findings.
+At every boot and handoff, re-check the kit-issues list for open faults and fix them first, so later sessions fix what earlier ones left.
 

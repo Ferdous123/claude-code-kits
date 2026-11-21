@@ -853,6 +853,16 @@ class TestCommands(ProjectCase):
         self.assertEqual(code, 0, out)
         self.assertEqual(out.strip().split("\n"), ["SCOPE ok (1 files)", "ACCEPT skipped: check out task-1"])
 
+    def test_verify_runs_acceptance_in_the_branch_own_worktree(self):
+        """verify from another checkout runs Done when in the worktree that holds the branch."""
+        self.make_task_branch(["src/new.py"])
+        self.p.git("checkout", "-q", "main")
+        self.p.git("worktree", "add", "-q", os.path.join(self.tmp, "task-wt"), "task-1")
+        code, out, _ = self.p.hk("verify", "docs/briefs/task-1.md")
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("ACCEPT skipped", out)
+        self.assertRegex(out, r"RESULT pass exit=0 ")
+
     def test_verify_acceptance_failure_exits_1(self):
         """verify exits 1 when the Done when command fails."""
         self.make_task_branch(["src/new.py"])
@@ -1508,14 +1518,12 @@ class TestRound3(HookCase):
         self.p.commit_push("broken row")
         self.assertFails("C11")
 
-    def test_r6_brief_pipe_line_is_format_error_but_fields_and_fences_are_fine(self):
-        """6: a brief line with ' | ' not starting with '|' is a format error; fields and code fences are not."""
+    def test_r6_brief_prose_with_pipe_is_fine_and_fields_and_fences_too(self):
+        """6: a brief prose line holding ' | ' is not a table row, so it is no error (nor are fields and code fences)."""
         path = "docs/briefs/task-1.md"
         good = self.p.read(path)
         self.p.write(path, good + "\na | b\n")
-        code, _, err = self.p.hk("pack", path)
-        self.assertEqual(code, 2)
-        self.assertIn("not a table row", err)
+        self.assertEqual(self.p.hk("pack", path)[0], 0)
         self.p.write(path, good + "\n```\na | b\n```\n")
         self.assertEqual(self.p.hk("pack", path)[0], 0)
         self.p.write(path, good.replace("Read: docs/guide.md#Usage", "Read: docs/guide.md#Usage\nDone when: `echo a | cat`"))
@@ -2144,6 +2152,23 @@ class TestRound5(ProjectCase):
         code, out, err = self.p.hk("pack", "task-1")
         self.assertEqual(code, 1, out)
         self.assertRegex(out, r"PACK \d+ chars > budget_pack 50")
+
+    # -- 2026-11-21 kit faults ----------------------------------------------
+
+    def test_pack_warns_over_default_budget_naming_three_biggest_map_refs(self):
+        """pack over the default 50000 chars (budget_pack unset) WARNs with the 3 biggest map refs; exit 0."""
+        for name in ("a", "b", "c", "d"):
+            self.p.write("docs/%s.md" % name, "# T\n" + "x" * (20000 if name != "d" else 100))
+        self.p.replace("docs/CONTEXT_MAP.md", "docs/arch.md#Overview;",
+                       "docs/a.md; docs/b.md; docs/c.md; docs/d.md; docs/arch.md#Overview;")
+        self.p.commit("big refs")
+        code, out, err = self.p.hk("pack", "task-1")
+        self.assertEqual(code, 0, out + err)
+        warn = [l for l in out.split("\n") if l.startswith("WARN pack ")]
+        self.assertEqual(len(warn), 1, out)
+        for name in ("docs/a.md", "docs/b.md", "docs/c.md"):
+            self.assertIn(name, warn[0])
+        self.assertNotIn("docs/d.md", warn[0])
 
     # -- 5. verify base -----------------------------------------------------
 

@@ -26,6 +26,8 @@ class HkError(Exception):
     """A usage or format error. main() prints it on one line and exits 2."""
 
 
+DEFAULT_PACK_WARN = 50000  # chars; pack warns above this when budget_pack is unset
+
 DEFAULTS = {
     "handoff": "docs/HANDOFF.md",
     "context_map": "docs/CONTEXT_MAP.md",
@@ -353,6 +355,17 @@ def worktree_paths(root):
         elif line == "bare":
             bare = True
     return [p for p in paths if p]
+
+
+def worktree_of_branch(root, branch):
+    """Return the path of the worktree that has the branch checked out, or None."""
+    path = None
+    for line in git_lines(root, ["worktree", "list", "--porcelain"]):
+        if line.startswith("worktree "):
+            path = line[len("worktree "):]
+        elif line == "branch refs/heads/%s" % branch:
+            return path
+    return None
 
 
 def status_count(path):
@@ -753,10 +766,11 @@ def brief_path(cfg, name):
     return "%s/%s.md" % (cfg["briefs_dir"].rstrip("/"), name)
 
 
-def check_pipe_lines(lines, label, skip_fields):
+def check_pipe_lines(lines, label):
     """Raise HkError for a line holding ' | ' that does not start with '|' (a broken table row).
 
-    Lines inside code fences are ignored; with skip_fields, brief field lines are ignored too."""
+    Only for files that are tables (the context map). Briefs are prose, so they never use it.
+    Lines inside code fences are ignored."""
     in_fence = False
     for line in lines:
         stripped = line.strip()
@@ -764,8 +778,6 @@ def check_pipe_lines(lines, label, skip_fields):
             in_fence = not in_fence
             continue
         if in_fence or " | " not in line or stripped.startswith("|"):
-            continue
-        if skip_fields and re.match(r"^(Model|Branch|Base|Touch|Done when|Read):", line):
             continue
         raise HkError("%s: line is not a table row: %s" % (label, stripped[:40]))
 
@@ -779,7 +791,6 @@ def parse_brief(text):
     fields = {}
     has_task = False
     first_heading = None
-    check_pipe_lines(lines, "brief %s" % match.group(1), True)
     for line in lines[1:]:
         if line.startswith("## "):
             if line.strip() == "## Task":
@@ -841,7 +852,7 @@ def load_context_map(root, cfg, gitref):
     text = read_at(root, cfg["context_map"], gitref)
     if text is None:
         return []
-    check_pipe_lines(text.split("\n"), "context map", False)
+    check_pipe_lines(text.split("\n"), "context map")
     rows, errors = parse_table(text.split("\n"), ["Paths", "Read", "Lessons"])
     if errors:
         raise HkError("context map: %s" % errors[0])
@@ -1220,6 +1231,13 @@ def procedure_block(root, cfg, warns):
     return ref_block(label, text)
 
 
+def pack_size_warning(total, limit, sizes, map_refs):
+    """Return one WARN line naming the three biggest auto-added refs, so the lead can narrow Touch."""
+    auto = sorted(((size, ref) for ref, size in sizes if ref in map_refs), reverse=True)
+    biggest = ", ".join("%s (%d)" % (ref, size) for size, ref in auto[:3])
+    return "WARN pack %d chars > %d; biggest map refs: %s" % (total, limit, biggest or "none")
+
+
 def cmd_pack(args):
     """hk pack: print a brief, the anchor lines, its reading and the report shape."""
     root, cfg = setup()
@@ -1228,12 +1246,11 @@ def cmd_pack(args):
     anchor = anchor_values(sections)
     anchor_text = "\n".join("%s: %s" % (k, anchor.get(k, ""))
                             for k in ("Goal", "Workflow", "Out of scope"))
-    refs = []
+    map_refs = []
     for row in load_context_map(root, cfg, None):
         if any(globs_overlap(g, t) for g in row["paths"] for t in brief["touch"]):
-            refs.extend(map_row_refs(root, cfg, row, None))
-    refs.extend(brief["read"])
-    refs = dedupe(refs)
+            map_refs.extend(map_row_refs(root, cfg, row, None))
+    refs = dedupe(map_refs + brief["read"])
     chunks = [brief_text.rstrip("\n"), anchor_text]
     sizes = [("brief", len(brief_text)), ("anchor", len(anchor_text))]
     warns = []
@@ -1256,6 +1273,9 @@ def cmd_pack(args):
     chunks.append(REPORT_SHAPE)
     sizes.append(("report", len(REPORT_SHAPE)))
     total = len("\n".join(chunks)) + 1
+    limit = cfg["budget_pack"] or DEFAULT_PACK_WARN
+    if total > limit:
+        warns.append(pack_size_warning(total, limit, sizes, set(map_refs)))
     if args.measure:
         for name, size in sizes:
             emit("%s: %d" % (name, size))
@@ -1360,10 +1380,12 @@ def cmd_verify(args):
         failed = True
     if not offenders:
         emit("SCOPE ok (%d files)" % len(files))
+    # Accept where the branch is checked out: here, else in its own worktree.
     current = git_out(root, ["rev-parse", "--abbrev-ref", "HEAD"])
-    if current == name:
+    accept_root = root if current == name else worktree_of_branch(root, name)
+    if accept_root:
         for command in brief["done"]:
-            code, _, result = execute_run(root, "verify-%s" % brief["id"], command,
+            code, _, result = execute_run(accept_root, "verify-%s" % brief["id"], command,
                                           False, cfg["ledger"])
             emit(result)
             if code != 0:
