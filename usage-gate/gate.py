@@ -70,6 +70,7 @@ STALE_OK = 15 * 60   # seconds an old reading still gates after a transient read
 BACKOFF_MIN, BACKOFF_MAX = 60, 15 * 60   # 429 back-off without Retry-After: 60 s doubling to 15 min
 FETCH_SLOT = 30   # seconds a process's claim to fetch blocks the others (longer than the 15 s HTTP timeout)
 HOOK_TTL = 120   # seconds a usage reading is reused by the hook
+LOGIN_WAIT = 30 * 60   # seconds past expiry the gate waits for the CLI to refresh a login it owns, before "log in again"
 WAIT_POLL = 300  # seconds between readings while paused
 NEW_WORK = {"Agent", "Task", "Workflow", "ScheduleWakeup", "CronCreate", "RemoteTrigger",
             "mcp__ccd_session__start_session", "mcp__ccd_session__hand_off_to_session"}
@@ -1011,10 +1012,19 @@ def _refresh_or_login(svc):
         raise
 
 
+class RefreshPending(Exception):
+    """The CLI-owned login's token has expired and the CLI has not saved a new one yet (it refreshes lazily)."""
+
+
 def fetch_usage(svc):
     o = kc_read(svc)["claudeAiOauth"]
     tok = o["accessToken"]
     is_managed = has_keychain() and managed(svc)
+    expires = o.get("expiresAt", 0) / 1000
+    if not is_managed and expires and expires < now():  # an expired token only draws 401s, then 429s
+        if now() - expires > LOGIN_WAIT:
+            raise RuntimeError("login expired (token expired %d min ago)" % ((now() - expires) // 60))
+        raise RefreshPending("waiting for Claude Code to refresh its login")
     if is_managed and o.get("expiresAt", 0) / 1000 - now() < 600:
         tok = _refresh_or_login(svc)
     try:
@@ -1170,7 +1180,12 @@ def usage(svc, ttl):
                 err["login"] = True
                 return
             is429 = getattr(e, "code", 0) == 429
-            err["kind"] = "rate-limited" if is429 else "network"
+            if is429:
+                err["kind"] = "rate-limited"
+            elif isinstance(e, RefreshPending):
+                err["kind"] = str(e)
+            else:
+                err["kind"] = "network"
             c.setdefault("err_since", now())
             if is429:
                 ra = _retry_after(e)

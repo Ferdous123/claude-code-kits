@@ -1146,7 +1146,7 @@ class CredentialsFileTest(GateBase):
         FakeApi.code = 401
         r = self.run_nofake("arm")
         self.assertIn("login expired", r.stdout)
-        self.assertEqual(FakeApi.paths, ["/api/oauth/usage"])  # no token endpoint call, only the usage read
+        self.assertEqual(FakeApi.paths, [])  # expired an hour ago: no token endpoint call and no usage read
         self.unchanged()
 
     def test_missing_file_is_a_clear_no_login_status(self):
@@ -1289,6 +1289,38 @@ class RateLimitTest(GateBase):
         out = self.nofake_hook("Bash", "PostToolUse")
         self.assertIn("log in again", out)
         self.assertIn("Log in again.", self.log_text())
+
+    def test_expired_cli_token_waits_for_the_cli_without_calling_the_api(self):
+        """Live 2026-11-21 22:28: an expired CLI token drew 401s ("Log in again", wrong) and then a 429."""
+        FakeApi.five = 97
+        self.run_nofake("arm")
+        self.age(300)
+        self.write_cred(int((time.time() - 60) * 1000))
+        n0 = len(FakeApi.paths)
+        out = self.nofake_hook("Bash", "PostToolUse")
+        self.assertNotIn("log in again", out.lower())
+        out = self.nofake_hook()
+        self.assertEqual(json.loads(out)["hookSpecificOutput"]["permissionDecision"], "deny")  # stale reading gates
+        self.assertEqual(len(FakeApi.paths), n0)
+        self.assertNotIn("Log in again", self.log_text())
+
+    def test_cli_token_expired_beyond_30_min_says_log_in_again(self):
+        self.run_nofake("arm")
+        self.age(300)
+        self.write_cred(int((time.time() - 31 * 60) * 1000))
+        n0 = len(FakeApi.paths)
+        out = self.nofake_hook("Bash", "PostToolUse")
+        self.assertIn("log in again", out)
+        self.assertEqual(len(FakeApi.paths), n0)
+
+    def test_waiting_for_refresh_beyond_15_min_says_so(self):
+        self.run_nofake("arm")
+        self.age(20 * 60)
+        self.write_cred(int((time.time() - 5 * 60) * 1000))
+        self.nofake_hook("Bash", "PostToolUse")
+        log = self.log_text()
+        self.assertIn("for 20 min (waiting for Claude Code to refresh its login); gating paused", log)
+        self.assertNotIn("Log in again", log)
 
     def test_stale_beyond_15_min_notifies_once_with_the_new_wording(self):
         self.run_nofake("arm")

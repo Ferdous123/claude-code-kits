@@ -23,3 +23,4 @@
 | D19 | 2026-11-21 | Live tests never stop or message other sessions' processes; buttons act only on their own session | owner |
 | D20 | 2026-11-21 | Only a lone gate command is auto-allowed by the hook; the installed copy ignores USAGE_GATE_* test overrides | Claude (owner's behalf) |
 | D21 | 2026-11-21 | Soft phases (asked, packing, paused_soft) tell, not block: only NEW_WORK is denied; hard, paused_hard and phone stop/pause still block | owner |
+| D22 | 2026-11-21 | A CLI-owned login past its expiresAt is not sent to the API: up to 30 min it is "waiting for Claude Code to refresh its login" (stale reading gates, 15-min notice); after 30 min it is "log in again" | owner (fix approved), 30 min by Claude |
