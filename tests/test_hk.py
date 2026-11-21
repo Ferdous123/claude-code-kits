@@ -1688,6 +1688,14 @@ class TestRound3(HookCase):
         self.p.commit_push("unrelated edit")
         self.assertFails("C4")
 
+    def test_r14_reverted_goal_change_passes(self):
+        """14: a goal reworded by mistake and restored in the next commit passes C4."""
+        self.p.replace("docs/HANDOFF.md", "Goal: Ship the demo app.", "Goal: Ship something else.")
+        self.p.commit_push("reword goal by mistake")
+        self.p.replace("docs/HANDOFF.md", "Goal: Ship something else.", "Goal: Ship the demo app.")
+        self.p.commit_push("restore goal")
+        self.assertOk()
+
     def test_r14_change_id_needs_a_digit(self):
         """14: an Anchor change id with no digit is not valid even if it is in the decisions file."""
         self.p.replace("docs/HANDOFF.md", "Goal: Ship the demo app.", "Goal: Ship something else.")

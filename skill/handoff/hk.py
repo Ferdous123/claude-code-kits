@@ -1518,18 +1518,19 @@ def check_c4(ctx):
         previous_text = read_at(root, cfg["handoff"], commits[1])
         if previous_text is not None:
             previous_id = state_info(parse_handoff(previous_text)[0])["anchor_change"]
-    changed = []
+    # Baseline: the older version that recorded the last Anchor change, else the oldest in the window.
+    # Versions in between do not count, so a mistake that a later commit reverted is not a change.
+    baseline = {}
     for commit in commits[1:]:
         old_text = read_at(root, cfg["handoff"], commit)
         if old_text is None:
             continue
         old_sections, _ = parse_handoff(old_text)
-        old = anchor_values(old_sections)
-        for key in FIXED_ANCHOR_KEYS:
-            if key in old and current.get(key, "") != old[key] and key not in changed:
-                changed.append(key)
+        baseline = anchor_values(old_sections)
         if state_info(old_sections)["anchor_change"]:
             break
+    changed = [key for key in FIXED_ANCHOR_KEYS
+               if key in baseline and current.get(key, "") != baseline[key]]
     if not changed:
         return msgs
     decisions = read_at(root, cfg["decisions"], tip) or ""
