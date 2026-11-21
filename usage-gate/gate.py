@@ -73,6 +73,13 @@ HOOK_TTL = 120   # seconds a usage reading is reused by the hook
 WAIT_POLL = 300  # seconds between readings while paused
 NEW_WORK = {"Agent", "Task", "Workflow", "ScheduleWakeup", "CronCreate", "RemoteTrigger",
             "mcp__ccd_session__start_session", "mcp__ccd_session__hand_off_to_session"}
+CLAUDE_CMD = re.compile(r"(^|[;&|]\s*)claude\b")  # a Bash command that starts another Claude session is new work
+
+
+def is_new_work(tool, ti):
+    return tool in NEW_WORK or (tool == "Bash" and bool(CLAUDE_CMD.search((ti or {}).get("command", "") or "")))
+
+
 HARD_OK = {"Read", "TaskStop", "TaskOutput", "SendMessage", "PushNotification", "SubagentHandback"}
 # A command is auto-allowed only when it is one gate call and nothing else: no chaining, redirects, substitution,
 # quotes, newlines or env-var prefix (anything else goes through normal gating).
@@ -481,7 +488,7 @@ def do_continue(s):
     u = usage(s["service"], 60)
     # Unreadable usage (e.g. 429): the owner said go on, so hold until the hard limit; never clear the override.
     lv = "soft" if "error" in u else level(s, u)
-    s.update(phase="run", override=None if lv == "ok" else lv, told=None, manual=None)
+    s.update(phase="run", override=None if lv == "ok" else lv, told=None, manual=None, post_tell=None)
     must_save(s)
     return "Go on. " + ("Next gate at %g%%." % s["hard"] if lv == "soft" else
                         "Gating is off until limits drop below %g%%." % s["soft"] if lv == "hard" else "")
@@ -513,6 +520,7 @@ def apply_command(s, name):
     elif name == "off":
         s.update(armed=False, manual=None)
         must_save(s)
+        clear_blocked(s["session"])
         txt = "Disarmed."
     else:
         return ""
@@ -829,7 +837,8 @@ def instruction(s, seq0):
     n = cmd.get("name")
     head = "The owner sent /%s from Telegram. " % n
     if n in ("continue", "resume"):
-        return head + "Carry on with the work."
+        return head + "Carry on with the work. Read RESUME.md and agent-*.md in %s too. %s" % (
+            note_dir(s["session"]), blocked_hint(s["session"]))
     if n == "off":
         return head + "The gate is disarmed: carry on, no more gating."
     u = usage(s["service"], HOOK_TTL)
@@ -1237,6 +1246,76 @@ def email_for_service(svc):
 
 
 # ---------- hook ----------
+BLOCKED_CALL = {}  # set by hook(): who is calling, so every deny can be recorded in blocked.md
+
+
+SECRET_CUT = re.compile(r"token|key|password|passw|pwd|secret|auth|bearer|sk-", re.I)
+BLOCKED_MAX_LINES = 200
+BLOCKED_KEEP = 3
+
+
+def blocked_summary(tool, ti):
+    """One short line about a denied call; anything after a secret-looking word is cut off."""
+    ti = ti if isinstance(ti, dict) else {}
+    text = ti.get("command") or ti.get("file_path") or ti.get("description") or ti.get("path") or ""
+    text = " ".join(str(text).split())
+    text = SECRET_CUT.split(text)[0].strip()
+    return text[:80]
+
+
+def blocked_path(sid):
+    return os.path.join(note_dir(sid), "blocked.md")
+
+
+def clear_blocked(sid):
+    try:
+        os.remove(blocked_path(sid))
+    except OSError:
+        pass
+
+
+def archive_blocked(sid):
+    """Move blocked.md to blocked-<time>.md (keeping the newest few); return the new path, or "" when none."""
+    src = blocked_path(sid)
+    if not os.path.exists(src):
+        return ""
+    dst = os.path.join(note_dir(sid), "blocked-%s.md" % time.strftime("%Y%m%d-%H%M%S"))
+    try:
+        os.replace(src, dst)
+        old = sorted(f for f in os.listdir(note_dir(sid)) if re.fullmatch(r"blocked-\d{8}-\d{6}\.md", f))
+        for f in old[:-BLOCKED_KEEP]:
+            os.remove(os.path.join(note_dir(sid), f))
+    except OSError:
+        return ""
+    return dst
+
+
+def blocked_hint(sid):
+    """The resume-message sentence about refused calls; archives blocked.md so the next resume lists new entries only."""
+    arch = archive_blocked(sid)
+    if arch:
+        return ("Also read %s (the calls the gate refused meanwhile, formerly blocked.md): redo or deliberately "
+                "drop each entry and say which in one line." % arch)
+    return "blocked.md: no calls were refused."
+
+
+def record_blocked(sid, tool, ti, aid):
+    s = load_sess(sid) or {}
+    if not s.get("armed"):
+        return
+    line = "%s | %s | %s | %s | %s" % (time.strftime("%Y-%m-%d %H:%M:%S"), s.get("phase", "run"),
+                                      aid or "lead", tool, blocked_summary(tool, ti))
+    path = blocked_path(sid)
+    os.makedirs(note_dir(sid), exist_ok=True)
+    with open(path, "a", encoding="utf-8") as f:
+        f.write(line + "\n")
+    with open(path, encoding="utf-8") as f:
+        lines = f.read().splitlines()
+    if len(lines) > BLOCKED_MAX_LINES:
+        with open(path, "w", encoding="utf-8") as f:
+            f.write("\n".join(lines[-BLOCKED_MAX_LINES:]) + "\n")
+
+
 def out(decision=None, reason=None, ctx=None, updated=None, event="PreToolUse"):
     h = {"hookEventName": event}
     if decision:
@@ -1247,7 +1326,12 @@ def out(decision=None, reason=None, ctx=None, updated=None, event="PreToolUse"):
         h["updatedInput"] = updated
     if ctx:
         h["additionalContext"] = ctx
-    print(json.dumps({"hookSpecificOutput": h}))
+    print(json.dumps({"hookSpecificOutput": h}), flush=True)
+    if decision == "deny" and BLOCKED_CALL:  # after the decision is out: a log failure must never undo a deny
+        try:
+            record_blocked(*BLOCKED_CALL["call"])
+        except Exception as e:
+            log("blocked.md write failed: %s" % type(e).__name__)
     sys.exit(0)
 
 
@@ -1295,13 +1379,27 @@ def msg_hard(s, u, is_sub, aid):
             "`%s wait`, and end your turn with one line to the user." % (s["hard"], figures(u), nd, nd, SELF))
 
 
-def msg_paused(s):
+def msg_paused(s, hardish=False):
     if s.get("manual"):
         return ("USAGE GATE: the owner %s this session from Telegram. Do nothing more and end your turn; "
                 "only the owner can resume it (/resume or /continue from the phone)."
                 % ("stopped" if s["manual"] == "stop" else "paused"))
-    return ("USAGE GATE: this session is paused for usage. If the user has just told you to resume, run "
-            "`%s resume` first, then continue. Otherwise do nothing more and end your turn." % SELF)
+    if hardish or s.get("phase") == "paused_hard":
+        return ("USAGE GATE: this session is paused for usage. If the user has just told you to resume, run "
+                "`%s resume` first, then continue. Otherwise do nothing more and end your turn." % SELF)
+    return ("USAGE GATE: this session is paused for usage. Finish your current work and start nothing new (no "
+            "agents, sessions or claude commands); it resumes by itself once limits drop below %g%%. If the user "
+            "has just told you to resume, run `%s resume` first." % (s["soft"], SELF))
+
+
+def tell_once(s, ph, msg):
+    """The session obeys a message, so soft phases tell instead of block: the first call after a phase starts gets
+    `msg` as context (and the next PostToolUse repeats it once); later calls pass in silence."""
+    if s.get("told") == ph:
+        return
+    s.update(told=ph, post_tell=msg)
+    save_sess(s)
+    out(ctx=msg)
 
 
 def hook():
@@ -1315,6 +1413,8 @@ def hook():
     ti = inp.get("tool_input") or {}
     aid = inp.get("agent_id") or ""
     is_sub = bool(aid)
+    if ev == "PreToolUse":
+        BLOCKED_CALL["call"] = (sid, tool, ti, aid)
 
     # While the owner's phone /stop or /pause holds, the model may not lift it by any spelling.
     if ev == "PreToolUse" and tool == "Bash" and sid:
@@ -1371,6 +1471,11 @@ def hook():
             notify(msg, s)
             out(ctx="usage-gate: %s Tell the user in one line; carry on." % msg, event="PostToolUse")
         sys.exit(0)
+    if ev == "PostToolUse" and not is_sub and s.get("post_tell"):
+        msg = s["post_tell"]
+        s["post_tell"] = None
+        save_sess(s)
+        out(ctx=msg, event="PostToolUse")
     if ev != "PreToolUse":
         sys.exit(0)
 
@@ -1387,14 +1492,24 @@ def hook():
 
     if lv == "ok":
         if ph != "run" or ov:
-            s.update(phase="run", override=None, told=None)
+            s.update(phase="run", override=None, told=None, post_tell=None)
             save_sess(s)
         sys.exit(0)
 
     if ph.startswith("paused"):
+        hardish = ph == "paused_hard" or lv == "hard"
+        if is_new_work(tool, ti):
+            out("deny", msg_paused(s, hardish))
         if is_sub:
             sys.exit(0)
-        out("deny", msg_paused(s))
+        if man:  # owner's /stop or /pause blocks everything
+            out("deny", msg_paused(s))
+        if hardish:  # usage past the hard limit: only notes and session tools, as at a hard stop
+            if hard_allowed(tool, ti, sid):
+                sys.exit(0)
+            out("deny", msg_paused(s, True))
+        tell_once(s, ph, msg_paused(s))
+        sys.exit(0)
 
     if lv == "hard" and ov != "hard":
         if ph != "hard":
@@ -1421,16 +1536,17 @@ def hook():
         notify("No answer: packing up the session.", s)
         ph = "packing"
     if is_sub:
-        if tool in NEW_WORK:
+        if is_new_work(tool, ti):
             out("deny", "USAGE GATE: no new agents now. Finish your current task and hand back.")
         sys.exit(0)
     msg = msg_ask(s, u) if ph == "asked" else msg_pack(s, u)
-    if s.get("told") != ph:
+    if is_new_work(tool, ti):
+        out("deny", msg)
+    if s.get("told") != ph and man:  # the owner's phone /pause blocks the first call
         s["told"] = ph
         save_sess(s)
         out("deny", msg)
-    if tool in NEW_WORK:
-        out("deny", msg)
+    tell_once(s, ph, msg)
     sys.exit(0)
 
 
@@ -1541,6 +1657,7 @@ def main2(argv):
     if c == "disarm":
         s.update(armed=False, manual=None)
         must_save(s)
+        clear_blocked(sid)
         print("Disarmed.")
     elif c == "status":
         u = usage(s["service"], HOOK_TTL)
@@ -1614,9 +1731,9 @@ def main2(argv):
                     must_save(s)
                     notify("Limits reset (%s). Resuming." % figures(u), s, u)
                     print("USAGE GATE: limits are back below %g%% (%s). Resume now: read %s/RESUME.md and any "
-                          "agent-*.md checkpoints there, then continue the plan (re-dispatch paused agents with "
-                          "their checkpoint). Tell the user in one line that you resumed."
-                          % (s["soft"], figures(u), note_dir(sid)))
+                          "agent-*.md checkpoints there. %s Then continue the plan "
+                          "(re-dispatch paused agents with their checkpoint). Tell the user in one line that you "
+                          "resumed." % (s["soft"], figures(u), note_dir(sid), blocked_hint(sid)))
                     return
             tick(15)
     else:

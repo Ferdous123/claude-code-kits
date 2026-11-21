@@ -21,7 +21,7 @@ Reply to the user in one line with what it printed (account, thresholds, current
 
 ## Phone commands (Telegram)
 
-While armed, before you end a turn that waits for the user, start `python3 -I ~/.claude/usage-gate/gate.py listen` with run_in_background (one per session; a new one ends the old one). Alerts also carry buttons (Continue/Pause, Resume/Status) that act on exactly that session, and `gate.py telegram menu` sets the "/" command list. The owner can send `/status`, `/stop`, `/pause`, `/continue`, `/resume`, `/off`, `/help` from the phone. When `listen` exits, do exactly what it printed: continue the work, pack up (as for packing), hard stop (as for hard stop), or carry on ungated after `/off`. If it says Telegram is not set up, skip it.
+While armed, before you end a turn that waits for the user, start `python3 -I ~/.claude/usage-gate/gate.py listen` with run_in_background (one per session; a new one ends the old one). Alerts also carry buttons (Continue/Pause, Resume/Status) that act on exactly that session, and `gate.py telegram menu` sets the "/" command list. The owner can send `/status`, `/stop`, `/pause`, `/continue`, `/resume`, `/off`, `/help` from the phone. When `listen` exits, do exactly what it printed: continue the work, pack up (as for packing), hard stop (as for hard stop), or carry on ungated after `/off`. After a phone `/resume` or `/continue`, also read `blocked.md` as above. If it says Telegram is not set up, skip it.
 
 When the hook says stop or pause and the message came from the owner's phone, behave as for hard stop or packing: write `RESUME.md`, run `gate.py wait` in the background. A phone `/stop` or `/pause` holds until the owner sends `/resume` or `/continue`, even if usage is low.
 
@@ -29,13 +29,13 @@ When the hook says stop or pause and the message came from the owner's phone, be
 
 Do exactly what the message says. It is the automation, not an error. In short:
 
-- **Soft (asked):** start nothing new; ask the user once, continue or pause, via `wrap_up` buttons, or plain text where there is no `wrap_up` (VS Code) (never AskUserQuestion, it can't time out); start `gate.py timer` with run_in_background; end the turn.
+- **Soft (asked):** the gate tells you once (no block). Start no new agent, session or step; finish the work you have in hand (running agents may keep going, messages and edits are fine; only new-work tools like Agent, Task, Workflow and start_session are refused). Then ask the user once, continue or pause, via `wrap_up` buttons, or plain text where there is no `wrap_up` (VS Code) (never AskUserQuestion, it can't time out); start `gate.py timer` with run_in_background; end the turn.
   - User says continue → `gate.py continue`. User says pause → `gate.py pause`.
   - Timer exits with "no answer" → pack up.
-- **Packing:** let running agents finish and hand back, write `RESUME.md` in the notes folder the message names, run `gate.py wait` with run_in_background, end the turn with one line.
+- **Packing:** the gate tells you once (no block). Keep finishing current work: let running agents finish and hand back, record their results, write `RESUME.md` in the notes folder the message names, run `gate.py wait` with run_in_background, end the turn with one line. While paused for usage everything except new-work tools still works, so you can finish those notes. Only the owner's phone /stop or /pause blocks every tool.
 - **Hard stop:** agents write checkpoints and stop; you write `RESUME.md`, start `gate.py wait` in the background, end the turn.
 - **Paused, then the user tells you to resume:** run `gate.py resume` first, then carry on.
-- **`wait` exits with "limits are back":** read `RESUME.md` and the `agent-*.md` checkpoints, resume the plan, say so in one line.
+- **`wait` exits with "limits are back":** read `RESUME.md`, the `agent-*.md` checkpoints and `blocked.md` (every call the gate refused; redo or deliberately drop each entry and say which in one line), resume the plan, say so in one line.
 
 When you start a side session while armed, add to its brief: "first run `python3 -I ~/.claude/usage-gate/gate.py arm --soft <s> --hard <h> --ask <m>`".
 

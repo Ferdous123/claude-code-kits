@@ -27,8 +27,8 @@ class GateBase(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stderr)
         if not r.stdout.strip():
             return "allow", ""
-        h = json.loads(r.stdout)["hookSpecificOutput"]
-        return h.get("permissionDecision", "?"), h.get("permissionDecisionReason", "")
+        h = json.loads(r.stdout)["hookSpecificOutput"]  # no permissionDecision means allow; a tell rides in additionalContext
+        return h.get("permissionDecision", "allow"), h.get("permissionDecisionReason") or h.get("additionalContext", "")
 
     def sess(self):
         with open(os.path.join(self.home, ".claude", "usage-gate", "sessions", SID + ".json")) as f:
@@ -39,6 +39,13 @@ class GateBase(unittest.TestCase):
 
 
 class GateTest(GateBase):
+    def blocked(self):
+        path = os.path.join(self.home, ".claude", "usage-gate", "notes", SID, "blocked.md")
+        if not os.path.exists(path):
+            return []
+        with open(path, encoding="utf-8") as f:
+            return f.read().splitlines()
+
     def test_unarmed_session_is_untouched(self):
         self.assertEqual(self.hook("99,99", "Bash")[0], "allow")
 
@@ -48,13 +55,66 @@ class GateTest(GateBase):
 
     def test_soft_asks_lead_once_then_blocks_only_new_work(self):
         self.arm()
-        d, r = self.hook("50,82", "Bash")
-        self.assertEqual(d, "deny")
+        d, r = self.hook("50,82", "SendMessage")  # first call after soft is a tell, never a block
+        self.assertEqual(d, "allow")
         self.assertIn("ask the user", r)
         self.assertEqual(self.sess()["phase"], "asked")
         self.assertEqual(self.hook("50,82", "Edit")[0], "allow")
         self.assertEqual(self.hook("50,82", "Agent")[0], "deny")
         self.assertEqual(self.hook("50,82", "mcp__ccd_session__start_session")[0], "deny")
+
+    def test_denied_new_work_at_soft_is_logged_in_blocked_md(self):
+        self.arm()
+        self.hook("50,82", "Bash")
+        self.assertEqual(self.hook("50,82", "Agent", ti={"description": "build the thing token=SECRET123"})[0], "deny")
+        lines = self.blocked()
+        self.assertEqual(len(lines), 1, lines)
+        for part in ("asked", "lead", "Agent", "build the thing"):
+            self.assertIn(part, lines[0])
+        self.assertNotIn("SECRET123", lines[0])
+        self.assertEqual(self.hook("50,82", "Edit")[0], "allow")  # allowed calls add nothing
+        self.assertEqual(len(self.blocked()), 1)
+
+    def test_denied_call_at_hard_is_logged_with_agent_id(self):
+        self.arm()
+        self.assertEqual(self.hook("50,96", "Bash", agent="a1", ti={"command": "ls " + "x" * 200})[0], "deny")
+        self.assertEqual(self.hook("50,96", "Bash", ti={"command": "rm -rf /tmp/zz"})[0], "deny")
+        lines = self.blocked()
+        self.assertEqual(len(lines), 2, lines)
+        self.assertIn("a1", lines[0])
+        self.assertIn("hard", lines[0])
+        self.assertLessEqual(len(lines[0].split(" | ")[-1]), 80)
+        self.assertIn("lead", lines[1])
+        self.assertIn("rm -rf /tmp/zz", lines[1])
+
+    def test_limits_back_message_names_blocked_md(self):
+        self.arm()
+        self.cmd("pause", fake="50,82")
+        self.assertIn("blocked.md", self.cmd("wait", fake="5,3"))
+
+    def test_limits_back_hands_over_blocked_md_once_and_keeps_the_last_three_archives(self):
+        self.arm()
+        notes = os.path.join(self.home, ".claude", "usage-gate", "notes", SID)
+        os.makedirs(notes, exist_ok=True)
+        for i in range(4):
+            with open(os.path.join(notes, "blocked-2020010%d-000000.md" % i), "w") as f:
+                f.write("old\n")
+        self.hook("50,96", "Bash", ti={"command": "rm -rf /tmp/zz"})
+        self.cmd("pause", fake="50,96")
+        out = self.cmd("wait", fake="5,3")
+        self.assertRegex(out, r"blocked-\d{8}-\d{6}")
+        self.assertEqual(self.blocked(), [])  # handed over: the next resume will not list it again
+        archives = sorted(f for f in os.listdir(notes) if f.startswith("blocked-"))
+        self.assertEqual(len(archives), 3, archives)
+        with open(os.path.join(notes, archives[-1])) as f:
+            self.assertIn("rm -rf /tmp/zz", f.read())
+
+    def test_disarm_clears_blocked_md(self):
+        self.arm()
+        self.hook("50,96", "Bash", ti={"command": "ls"})
+        self.assertEqual(len(self.blocked()), 1)
+        self.cmd("disarm")
+        self.assertEqual(self.blocked(), [])
 
     def test_soft_lets_subagents_finish_but_not_spawn(self):
         self.arm()
@@ -66,7 +126,7 @@ class GateTest(GateBase):
         self.hook("50,82", "Bash")
         time.sleep(1.2)
         d, r = self.hook("50,82", "Read")
-        self.assertEqual((d, self.sess()["phase"]), ("deny", "packing"))
+        self.assertEqual((d, self.sess()["phase"]), ("allow", "packing"))
         self.assertIn("RESUME.md", r)
         self.assertEqual(self.hook("50,82", "Edit")[0], "allow")
         self.assertEqual(self.hook("50,82", "Workflow")[0], "deny")
@@ -104,7 +164,7 @@ class GateTest(GateBase):
     def test_soft_question_falls_back_to_plain_text_without_wrap_up(self):
         self.arm()
         d, r = self.hook("85,10", "Bash")
-        self.assertEqual(d, "deny")
+        self.assertEqual(d, "allow")
         self.assertIn("plain text", r)
         self.assertIn("wrap_up", r)
 
@@ -191,17 +251,97 @@ class GateTest(GateBase):
         self.arm()
         self.assertEqual(self.sess()["email"], "a@b.c")
 
-    def test_paused_session_tells_lead_to_resume_first(self):
+    def pause_session(self, phase="paused_soft", fake="50,82"):
         self.arm()
         self.hook("50,82", "Bash")
         self.cmd("continue", fake="50,82")
         s = self.sess()
-        s["phase"] = "paused_soft"
+        s["phase"] = phase
         with open(os.path.join(self.home, ".claude", "usage-gate", "sessions", SID + ".json"), "w") as f:
             json.dump(s, f)
-        d, r = self.hook("50,96", "Bash")
-        self.assertEqual(d, "deny")
+
+    def test_paused_session_tells_lead_to_resume_first(self):
+        self.pause_session()
+        d, r = self.hook("50,82", "Bash")
+        self.assertEqual(d, "allow")
         self.assertIn("resume", r)
+        for tool in ("Edit", "SendMessage"):
+            self.assertEqual(self.hook("50,82", tool)[0], "allow", tool)
+        for tool in ("Agent", "mcp__ccd_session__start_session"):
+            d, r = self.hook("50,82", tool)
+            self.assertEqual(d, "deny", tool)
+            self.assertIn("resume", r)
+
+    def test_paused_soft_tells_once_and_says_to_finish_current_work(self):
+        self.pause_session()
+        d, r = self.hook("50,82", "Bash")
+        self.assertEqual(d, "allow")
+        self.assertIn("finish", r.lower())
+        self.assertIn("resumes by itself", r)
+        self.assertEqual(self.hook("50,82", "Bash"), ("allow", ""))  # told once, then silent
+
+    def test_paused_hard_without_phone_stop_blocks_like_a_hard_stop(self):
+        self.pause_session(phase="paused_hard", fake="50,96")
+        for tool, ti in (("Bash", {"command": "ls"}), ("Edit", {"file_path": "/tmp/x.py"})):
+            d, r = self.hook("50,82", tool, ti=ti)
+            self.assertEqual(d, "deny", tool)
+            self.assertIn("resume", r)
+        notes = os.path.join(self.home, ".claude", "usage-gate", "notes", SID)
+        self.assertEqual(self.hook("50,82", "Edit", ti={"file_path": os.path.join(notes, "RESUME.md")})[0], "allow")
+        self.assertEqual(self.hook("50,82", "SendMessage")[0], "allow")
+
+    def test_paused_soft_past_the_hard_limit_blocks_like_a_hard_stop(self):
+        self.pause_session()
+        self.assertEqual(self.hook("50,96", "Bash", ti={"command": "ls"})[0], "deny")
+        self.assertEqual(self.hook("50,96", "Read")[0], "allow")
+
+    def test_paused_phases_refuse_new_work_to_subagents_too(self):
+        for phase in ("paused_soft", "paused_hard"):
+            self.pause_session(phase=phase)
+            self.assertEqual(self.hook("50,82", "Agent", agent="a1")[0], "deny", phase)
+            self.assertEqual(self.hook("50,82", "Read", agent="a1")[0], "allow", phase)
+
+    def test_a_claude_command_in_bash_counts_as_new_work(self):
+        self.arm()
+        self.hook("50,82", "Bash")
+        for c in ("claude -p hi", "cd x && claude --resume", "ls; claude", "echo a|claude"):
+            self.assertEqual(self.hook("50,82", "Bash", ti={"command": c})[0], "deny", c)
+        for c in ("ls claude-notes", "echo claudette"):
+            self.assertEqual(self.hook("50,82", "Bash", ti={"command": c})[0], "allow", c)
+
+    def test_soft_tell_is_repeated_once_on_the_next_post_tool_use(self):
+        self.arm()
+        d, r = self.hook("50,82", "Bash")
+        self.assertIn("ask the user", r)
+        d, r = self.hook("50,82", "Read", event="PostToolUse")
+        self.assertIn("ask the user", r)
+        self.assertEqual(self.hook("50,82", "Read", event="PostToolUse"), ("allow", ""))
+
+    def test_blocked_summary_cuts_secrets(self):
+        self.arm()
+        self.hook("50,96", "Bash")
+        for i, c in enumerate(("curl -H 'Authorization: Bearer abc'", "x sk-ant-123", "mysql --passw=1", "a pwd=zz",
+                               "echo SECRET=1")):
+            self.hook("50,96", "Bash", ti={"command": "run " + c})
+        self.assertEqual(len(self.blocked()), 6)  # the opening call plus the five
+        text = "\n".join(self.blocked())
+        for leak in ("abc", "123", "=1", "zz"):
+            self.assertNotIn(leak, text)
+
+    def test_blocked_md_is_capped_at_200_lines(self):
+        self.arm()
+        for i in range(205):
+            self.hook("50,96", "Bash", ti={"command": "ls %d" % i})
+        lines = self.blocked()
+        self.assertEqual(len(lines), 200)
+        self.assertIn("ls 204", lines[-1])
+
+    def test_a_denied_call_with_non_ascii_text_still_prints_the_decision_under_an_ascii_locale(self):
+        self.arm()
+        self.env.update(LC_ALL="C", LANG="C", PYTHONUTF8="0", PYTHONIOENCODING="ascii:backslashreplace")
+        d, r = self.hook("50,96", "Bash", ti={"command": "echo caf\u00e9 \u4e2d\u6587"})
+        self.assertEqual(d, "deny")
+        self.assertEqual(len(self.blocked()), 1)
 
     def test_resume_at_hard_turns_gating_off_until_reset(self):
         self.arm()
@@ -304,7 +444,7 @@ class TelegramTest(TelegramBase):
     def test_soft_alert_has_prefix_figures_and_age(self):
         self.configure()
         self.arm()
-        self.assertEqual(self.hook("50,82", "Bash")[0], "deny")
+        self.assertEqual(self.hook("50,82", "Bash")[0], "allow")
         self.wait_sent()
         self.assertEqual(len(FakeTelegram.sent), 1)
         m = FakeTelegram.sent[0]
@@ -319,7 +459,7 @@ class TelegramTest(TelegramBase):
         os.makedirs(proj)
         subprocess.run([sys.executable, "-I", GATE, "arm", "--ask", "10"], cwd=proj,
                        env=dict(self.env, USAGE_GATE_FAKE="10,10"), capture_output=True, timeout=30)
-        self.assertEqual(self.hook("50,82", "Bash")[0], "deny")
+        self.assertEqual(self.hook("50,82", "Bash")[0], "allow")
         self.wait_sent()
         self.assertIn("myproj #" + SID[:4], FakeTelegram.sent[0]["text"])
 
@@ -334,7 +474,7 @@ class TelegramTest(TelegramBase):
         self.configure()
         self.arm()
         FakeTelegram.fail = True
-        self.assertEqual(self.hook("50,82", "Bash")[0], "deny")
+        self.assertEqual(self.hook("50,82", "Bash")[0], "allow")
         self.assertEqual(self.sess()["phase"], "asked")
         time.sleep(1.5)
         log = self.logtext()
@@ -345,7 +485,7 @@ class TelegramTest(TelegramBase):
         self.configure()
         self.arm()
         self.env["USAGE_GATE_FAKE_AGE"] = "400"
-        self.assertEqual(self.hook("50,82", "Bash")[0], "deny")
+        self.assertEqual(self.hook("50,82", "Bash")[0], "allow")
         self.assertEqual(FakeTelegram.sent, [])
         self.assertIn("telegram skipped", self.logtext())
 
@@ -406,7 +546,7 @@ class TelegramTest(TelegramBase):
         self.arm()
         FakeTelegram.hang = 30
         t = time.time()
-        self.assertEqual(self.hook("50,82", "Bash")[0], "deny")
+        self.assertEqual(self.hook("50,82", "Bash")[0], "allow")
         self.assertLess(time.time() - t, 2)
 
     def test_token_is_scrubbed_from_error_log(self):
@@ -464,10 +604,43 @@ class CommandTest(TelegramBase):
         return subprocess.run([sys.executable, "-I", GATE] + list(args), env=e, capture_output=True, text=True,
                               timeout=timeout)
 
-    def poll(self, env=None, fake="10,10"):
+    def poll_once(self, env=None, fake="10,10"):
         r = self.run_gate("telegram", "poll", env=env, fake=fake)
         self.assertEqual(r.returncode, 0, r.stderr)
         return r.stdout
+
+    def unhandled(self, env=None):
+        """Fresh updates from the owner's chat that this machine has not handled yet."""
+        home = (env or self.env)["HOME"]
+        try:
+            with open(os.path.join(home, ".claude", "usage-gate", "telegram-last.json")) as f:
+                last = json.load(f).get("last_update_id", 0)
+        except (OSError, ValueError):
+            last = 0
+        def mine(u):
+            m = u.get("message")
+            return u.get("callback_query") is not None or (m and m.get("chat", {}).get("id") == 42
+                                                          and time.time() - m.get("date", 0) < 300)
+        return [u for u in FakeTelegram.updates if u["update_id"] > last and mine(u)]
+
+    def poll_until(self, done=None, env=None, fake="10,10", t=20):
+        """A hook's background poll child may hold the poll lock, so one poll can do nothing: retry until `done()`
+        holds (default: every fresh update from the owner has been handled) or the deadline passes.
+        Returns whether `done()` held."""
+        return self.poll_loop(done, env, fake, t)[1]
+
+    def poll_loop(self, done, env, fake, t):
+        done = done or (lambda: not self.unhandled(env))
+        end = time.time() + t
+        while True:
+            out = self.poll_once(env=env, fake=fake)
+            ok = bool(done())
+            if ok or time.time() >= end:
+                return out, ok
+            time.sleep(0.2)
+
+    def poll(self, env=None, fake="10,10"):
+        return self.poll_loop(None, env, fake, 20)[0]
 
     def texts(self):
         return [m["text"] for m in FakeTelegram.sent]
@@ -488,6 +661,18 @@ class CommandTest(TelegramBase):
     def sess_of(self, sid, home=None):
         with open(os.path.join(home or self.home, ".claude", "usage-gate", "sessions", sid + ".json")) as f:
             return json.load(f)
+
+    def test_poll_helper_retries_while_a_poll_child_holds_the_poll_lock(self):
+        import fcntl
+        self.arm()
+        self.upd("/pause")
+        path = os.path.join(self.home, ".claude", "usage-gate", "telegram-poll.lock")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        f = open(path, "a+")
+        fcntl.flock(f, fcntl.LOCK_EX)
+        threading.Timer(1.5, lambda: (fcntl.flock(f, fcntl.LOCK_UN), f.close())).start()
+        self.poll()
+        self.assertEqual(self.sess()["phase"], "packing")
 
     def test_status_replies_with_prefix_and_phase(self):
         self.arm()
@@ -1387,7 +1572,8 @@ import fcntl as _fcntl
 
 
 class BusyLockTest(TelegramBase):
-    upd, run_gate, poll = CommandTest.upd, CommandTest.run_gate, CommandTest.poll
+    upd, run_gate = CommandTest.upd, CommandTest.run_gate
+    poll = CommandTest.poll_once  # these tests hold a lock on purpose: one poll, the update must stay unhandled
 
     def setUp(self):
         TelegramBase.setUp(self)
@@ -1402,13 +1588,14 @@ class BusyLockTest(TelegramBase):
         self.addCleanup(f.close)
         return f
 
-    def test_hook_still_denies_when_the_session_lock_is_busy(self):
+    def test_hook_still_gates_when_the_session_lock_is_busy(self):
         self.env["USAGE_GATE_LOCK_TIMEOUT"] = "0.3"
         self.arm()
         self.hold()
-        d, r = self.hook("50,82", "Bash")  # hook() asserts exit code 0
-        self.assertEqual(d, "deny")
+        d, r = self.hook("50,82", "Bash")  # hook() asserts exit code 0; soft now tells instead of denying
+        self.assertEqual(d, "allow")
         self.assertIn("USAGE GATE", r)
+        self.assertEqual(self.hook("50,82", "Agent")[0], "deny")
 
     def test_hook_keeps_a_hard_stop_when_the_lock_is_busy(self):
         self.env["USAGE_GATE_LOCK_TIMEOUT"] = "0.3"
@@ -1779,16 +1966,6 @@ class ButtonsTest(CommandTest):
                        capture_output=True, text=True, timeout=30)
         self.assertEqual(self.buttons(), [("Status", "status")])
 
-    def poll_until(self, done, fake="10,10", t=20):
-        """A hook's background poll child may hold the poll lock: poll until the press has landed."""
-        end = time.time() + t
-        while time.time() < end:
-            self.poll(fake=fake)
-            if done():
-                return True
-            time.sleep(0.2)
-        return False
-
     def sess_of(self, sid):
         with open(os.path.join(self.home, ".claude", "usage-gate", "sessions", sid + ".json")) as f:
             return json.load(f)
@@ -1895,7 +2072,7 @@ class PhoneContinueTest(CommandTest):
 
     def test_soft_ask_then_phone_continue_then_hooks_pass_until_hard(self):
         self.arm(ask="0")
-        self.assertEqual(self.hook("50,82", "Bash")[0], "deny")  # the soft question
+        self.assertEqual(self.hook("50,82", "Bash")[0], "allow")  # the soft question
         self.upd("/continue")
         self.poll(fake="50,82")
         out = self.run_gate("timer", fake="50,82").stdout  # the timer of the question wakes after the answer
@@ -1969,6 +2146,7 @@ class ReexecTest(CommandTest):
         self.upd("/continue")  # state (seq0) survived: the child hears the command
         out = p.communicate(timeout=30)[0]
         self.assertIn("Carry on", out)
+        self.assertIn("blocked.md", out)  # phone /continue tells Claude to read blocked.md
         self.assertEqual(p.returncode, 0)
 
     def test_a_broken_new_file_is_not_executed_and_is_logged_once(self):
