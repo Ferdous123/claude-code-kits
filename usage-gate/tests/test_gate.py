@@ -463,7 +463,12 @@ class CommandTest(TelegramBase):
         self.arm()
         self.hook("50,82", "Bash")
         self.upd("/continue")
-        self.poll(fake="50,82")
+        end = time.time() + 20  # a background poll child may hold the poll lock under load: poll until it lands
+        while time.time() < end:
+            self.poll(fake="50,82")
+            if self.sess()["phase"] == "run":
+                break
+            time.sleep(0.2)
         self.assertEqual((self.sess()["phase"], self.sess()["override"]), ("run", "soft"))
         self.assertEqual(self.hook("50,82", "Agent")[0], "allow")
 
@@ -828,7 +833,7 @@ def load_gate(home, platform=None):
 
 
 class FakeApi(http.server.BaseHTTPRequestHandler):
-    auth, paths, code, five = [], [], 200, 31
+    auth, paths, code, five, retry_after = [], [], 200, 31, None
 
     def do_GET(self):
         cls = type(self)
@@ -836,6 +841,8 @@ class FakeApi(http.server.BaseHTTPRequestHandler):
         cls.paths.append(self.path)
         if cls.code != 200:
             self.send_response(cls.code)
+            if cls.retry_after:
+                self.send_header("Retry-After", str(cls.retry_after))
             self.end_headers()
             return
         data = json.dumps({"five_hour": {"utilization": cls.five, "resets_at": None},
@@ -922,6 +929,214 @@ class CredentialsFileTest(GateBase):
         self.assertEqual(r.returncode, 0, r.stderr)
         self.assertEqual(len(r.stdout.strip().splitlines()), 1)
         self.assertIn("no keychain", r.stdout)
+
+
+
+class RateLimitTest(GateBase):
+    """HTTP 429 and other transient errors must not erase the last good reading (live 2026-11-21)."""
+    write_cred = CredentialsFileTest.write_cred
+    run_nofake = CredentialsFileTest.run_nofake
+
+    def setUp(self):
+        GateBase.setUp(self)
+        FakeApi.auth, FakeApi.paths, FakeApi.code = [], [], 200
+        self.srv = http.server.HTTPServer(("127.0.0.1", 0), FakeApi)
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        self.addCleanup(self.srv.shutdown)
+        self.env.update(USAGE_GATE_NO_KEYCHAIN="1", USAGE_GATE_API="http://127.0.0.1:%d" % self.srv.server_port)
+        self.cred = os.path.join(self.home, ".claude", ".credentials.json")
+        FakeApi.retry_after, FakeApi.five = None, 31
+        self.addCleanup(setattr, FakeApi, "retry_after", None)
+        self.addCleanup(setattr, FakeApi, "five", 31)
+        self.write_cred(int((time.time() + 3600) * 1000))
+
+    def cache_file(self):
+        d = os.path.join(self.home, ".claude", "usage-gate", "cache")
+        return os.path.join(d, [n for n in os.listdir(d) if n.startswith("usage-") and n.endswith(".json")][0])
+
+    def edit_cache(self, fn):
+        with open(self.cache_file()) as f:
+            c = json.load(f)
+        fn(c)
+        with open(self.cache_file(), "w") as f:
+            json.dump(c, f)
+
+    def age(self, sec):
+        def f(c):
+            g = c.get("good") or c  # new format, or main's bare reading
+            g["ts"] -= sec
+            if "err_since" in c:
+                c["err_since"] -= sec
+        self.edit_cache(f)
+
+    def nofake_hook(self, tool="Agent", event="PreToolUse", sid=SID):
+        inp = json.dumps({"hook_event_name": event, "session_id": sid, "tool_name": tool, "tool_input": {}})
+        r = subprocess.run([sys.executable, "-I", GATE, "hook"], input=inp,
+                           env=dict(self.env, CLAUDE_CODE_SESSION_ID=sid), capture_output=True,
+                           text=True, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return r.stdout
+
+    def log_text(self):
+        with open(os.path.join(self.home, ".claude", "usage-gate", "gate.log")) as f:
+            return f.read()
+
+    def test_429_keeps_the_old_reading_and_still_denies_at_hard(self):
+        FakeApi.five = 97
+        self.run_nofake("arm")
+        FakeApi.code = 429
+        self.age(300)  # older than HOOK_TTL, younger than STALE_OK
+        out = self.nofake_hook()
+        self.assertEqual(json.loads(out)["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertNotIn("Can't read usage", self.log_text())
+
+    def test_retry_after_stops_fetches_across_processes_until_it_passes(self):
+        self.run_nofake("arm")
+        self.age(300)
+        FakeApi.code, FakeApi.retry_after = 429, 300
+        n0 = len(FakeApi.paths)
+        self.nofake_hook()
+        self.assertEqual(len(FakeApi.paths), n0 + 1)
+        self.nofake_hook()
+        self.nofake_hook("Bash", "PostToolUse")
+        self.assertEqual(len(FakeApi.paths), n0 + 1)  # later hook processes skip the fetch
+        FakeApi.code = 200
+        self.nofake_hook()
+        self.assertEqual(len(FakeApi.paths), n0 + 1)
+        self.edit_cache(lambda c: c.update(retry_after_until=time.time() - 1))
+        self.nofake_hook()
+        self.assertEqual(len(FakeApi.paths), n0 + 2)
+        with open(self.cache_file()) as f:
+            self.assertFalse(json.load(f).get("retry_after_until"))  # reset on success
+
+    def test_429_without_retry_after_backs_off_from_60_seconds(self):
+        self.run_nofake("arm")
+        self.age(300)
+        FakeApi.code = 429
+        self.nofake_hook()
+        with open(self.cache_file()) as f:
+            wait = json.load(f)["retry_after_until"] - time.time()
+        self.assertTrue(50 < wait <= 60, wait)
+
+    def test_401_still_says_log_in_again(self):
+        self.run_nofake("arm")
+        self.age(300)
+        FakeApi.code = 401
+        out = self.nofake_hook("Bash", "PostToolUse")
+        self.assertIn("log in again", out)
+        self.assertIn("Log in again.", self.log_text())
+
+    def test_stale_beyond_15_min_notifies_once_with_the_new_wording(self):
+        self.run_nofake("arm")
+        self.age(20 * 60)
+        FakeApi.code = 429
+        FakeApi.retry_after = 120
+        self.nofake_hook("Bash", "PostToolUse")
+        self.nofake_hook("Bash", "PostToolUse")
+        log = self.log_text()
+        self.assertEqual(log.count("Can't read usage for"), 1)
+        self.assertIn("for 20 min (rate-limited); gating paused until it reads again", log)
+        self.assertNotIn("Log in again", log)
+
+    def py(self, code):
+        """Run `code` in a fresh process with gate.py importable (isolated HOME); returns its stdout."""
+        pre = "import sys; sys.path.insert(0, %r); import gate, json, os, time, hashlib, urllib.error\n" % os.path.dirname(GATE)
+        env = {k: v for k, v in self.env.items() if k != "USAGE_GATE_FAKE"}
+        r = subprocess.run([sys.executable, "-I", "-c", pre + code], env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(r.returncode, 0, r.stderr)
+        return r.stdout
+
+    def set_phase(self, phase):
+        p = os.path.join(self.home, ".claude", "usage-gate", "sessions", SID + ".json")
+        with open(p) as f:
+            s = json.load(f)
+        s["phase"] = phase
+        with open(p, "w") as f:
+            json.dump(s, f)
+
+    def test_network_error_after_a_429_is_not_refetched_by_every_hook(self):
+        self.run_nofake("arm")
+        self.age(300)
+        FakeApi.code, FakeApi.retry_after = 429, 10
+        self.nofake_hook()
+        self.edit_cache(lambda c: c.update(retry_after_until=time.time() - 1))
+        FakeApi.code, FakeApi.retry_after = 500, None
+        n0 = len(FakeApi.paths)
+        for _ in range(3):
+            self.nofake_hook()
+        self.assertEqual(len(FakeApi.paths), n0 + 1)  # the error is reused for the TTL, not refetched each time
+
+    def test_an_older_reading_never_overwrites_a_newer_one(self):
+        out = self.py("""
+svc = 'svc-x'
+path = os.path.join(gate.CACHE, 'usage-' + hashlib.sha1(svc.encode()).hexdigest()[:10] + '.json')
+os.makedirs(gate.CACHE, exist_ok=True)
+new = {'ts': time.time() - 5, 'five_hour': {'pct': 97.0, 'resets_at': None}, 'seven_day': {'pct': 1.0, 'resets_at': None}}
+json.dump({'good': new}, open(path, 'w'))
+old = {'ts': time.time() - 60, 'five_hour': {'pct': 10.0, 'resets_at': None}, 'seven_day': {'pct': 1.0, 'resets_at': None}}
+gate.fetch_usage = lambda s: old
+u = gate.usage(svc, 0)
+c = json.load(open(path))
+print(u['five_hour']['pct'], (c.get('good') or c)['five_hour']['pct'])
+""")
+        self.assertEqual(out.split(), ["97.0", "97.0"])
+
+    def test_hard_stop_is_not_lifted_by_a_stale_reading(self):
+        self.run_nofake("arm")
+        self.set_phase("hard")
+        self.age(300)
+        FakeApi.code = 429
+        out = self.nofake_hook()
+        self.assertEqual(json.loads(out)["hookSpecificOutput"]["permissionDecision"], "deny")
+        self.assertEqual(self.sess()["phase"], "hard")
+
+    def test_wait_does_not_resume_on_a_stale_reading(self):
+        self.run_nofake("arm")
+        self.set_phase("hard")
+        self.age(300)
+        FakeApi.code = 429
+        env = dict(self.env, USAGE_GATE_TICK="0.2")
+        with self.assertRaises(subprocess.TimeoutExpired):
+            subprocess.run([sys.executable, "-I", GATE, "wait"], env=env, capture_output=True, text=True, timeout=5)
+        self.assertTrue(self.sess()["phase"].startswith("paused"))
+
+    def test_rejected_refresh_is_a_login_problem(self):
+        out = self.py("""
+def fake_http(url, token=None, body=None):
+    raise urllib.error.HTTPError(url, 400, 'invalid_grant', {}, None)
+gate.http = fake_http
+gate.has_keychain = lambda: True
+gate.managed = lambda svc: True
+gate.kc_write = lambda svc, data: None
+gate.kc_read = lambda svc: {'claudeAiOauth': {'accessToken': 'a', 'refreshToken': 'r', 'expiresAt': 0}}
+u = gate.usage('svc-y', 0)
+print(bool(u.get('login')), bool(u.get('transient')))
+""")
+        self.assertEqual(out.split(), ["True", "False"])
+
+    def test_retry_after_http_date_floor_and_cap(self):
+        from email.utils import formatdate
+        def wait_for(value):
+            self.run_nofake("arm")
+            self.age(300)
+            FakeApi.code, FakeApi.retry_after = 429, value
+            self.nofake_hook()
+            with open(self.cache_file()) as f:
+                return json.load(f)["retry_after_until"] - time.time()
+        w = wait_for(formatdate(time.time() + 200, usegmt=True))
+        self.assertTrue(150 < w <= 201, w)
+        self.assertTrue(wait_for(1) >= 9, "floor 10 s")
+        self.assertTrue(wait_for(99999) <= 901, "cap 15 min")
+
+    def test_two_sessions_on_one_account_send_one_notice_per_hour(self):
+        self.run_nofake("arm")
+        subprocess.run([sys.executable, "-I", GATE, "arm"], env=dict(self.env, CLAUDE_CODE_SESSION_ID="test-sess-2"),
+                       capture_output=True, text=True, timeout=30)
+        self.age(20 * 60)
+        FakeApi.code, FakeApi.retry_after = 429, 120
+        self.nofake_hook("Bash", "PostToolUse")
+        self.nofake_hook("Bash", "PostToolUse", sid="test-sess-2")
+        self.assertEqual(self.log_text().count("Can't read usage for"), 1)
 
 
 class LauncherTest(GateBase):

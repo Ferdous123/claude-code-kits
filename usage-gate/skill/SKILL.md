@@ -39,4 +39,4 @@ Do exactly what the message says. It is the automation, not an error. In short:
 
 When you start a side session while armed, add to its brief: "first run `python3 -I ~/.claude/usage-gate/gate.py arm --soft <s> --hard <h> --ask <m>`".
 
-If the hook says it can't read usage, tell the user the login command it names, once, and carry on.
+If the hook says to log in again, tell the user the login command it names, once, and carry on. If it says usage has been unreadable for N min (rate-limited/network), say so in one line: gating resumes by itself when it reads again; no login needed.

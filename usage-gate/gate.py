@@ -52,6 +52,9 @@ API = os.environ.get("USAGE_GATE_API") or "https://api.anthropic.com"
 LOCK_TIMEOUT = float(os.environ.get("USAGE_GATE_LOCK_TIMEOUT") or 10)  # seconds a lock is waited for; also the longest a fallback lock file counts as live
 LOCK_STALE = None   # tests: stale age override for fallback lock files (default: the wait timeout)
 POLL_LOCK_STALE = 120  # the poll lock is held across network calls
+STALE_OK = 15 * 60   # seconds an old reading still gates after a transient read error
+RETRY_MIN = 10   # floor for a Retry-After value
+BACKOFF_MIN, BACKOFF_MAX = 60, 15 * 60   # 429 back-off without Retry-After: 60 s doubling to 15 min
 HOOK_TTL = 120   # seconds a usage reading is reused by the hook
 WAIT_POLL = 300  # seconds between readings while paused
 NEW_WORK = {"Agent", "Task", "Workflow", "ScheduleWakeup", "CronCreate", "RemoteTrigger",
@@ -413,7 +416,7 @@ def bump(s, name):
 
 
 def do_continue(s):
-    u = usage(s["service"], 0)
+    u = usage(s["service"], 60)
     lv = "ok" if "error" in u else level(s, u)
     s.update(phase="run", override=None if lv == "ok" else lv, told=None, manual=None)
     must_save(s)
@@ -773,17 +776,26 @@ def managed(svc):
     return any(a.get("service") == svc and a.get("managed") for a in acc.values())
 
 
+def _refresh_or_login(svc):
+    try:
+        return refresh(svc)
+    except urllib.error.HTTPError as e:
+        if e.code in (400, 401, 403):  # invalid_grant: the refresh token is dead, only a new login helps
+            raise RuntimeError("login expired (refresh rejected: %d)" % e.code)
+        raise
+
+
 def fetch_usage(svc):
     o = kc_read(svc)["claudeAiOauth"]
     tok = o["accessToken"]
     is_managed = has_keychain() and managed(svc)
     if is_managed and o.get("expiresAt", 0) / 1000 - now() < 600:
-        tok = refresh(svc)
+        tok = _refresh_or_login(svc)
     try:
         u = http(API + "/api/oauth/usage", token=tok)
     except urllib.error.HTTPError as e:
         if e.code == 401 and is_managed:
-            u = http(API + "/api/oauth/usage", token=refresh(svc))
+            u = http(API + "/api/oauth/usage", token=_refresh_or_login(svc))
         elif e.code == 401:
             raise RuntimeError("login expired (401)")
         else:
@@ -802,25 +814,134 @@ def cache_write(path, data):
         log("usage cache write failed: %s" % type(e).__name__)
 
 
+def _login_problem(e):
+    """Only these mean "log in again": 401/403 after any refresh, a refresh the server rejected, a missing or
+    unreadable login."""
+    if isinstance(e, urllib.error.HTTPError):
+        return e.code in (401, 403)
+    return isinstance(e, (RuntimeError, KeyError))
+
+
+def _retry_after(e):
+    """Seconds from a Retry-After header (delta-seconds or HTTP-date), floored at RETRY_MIN, capped at BACKOFF_MAX."""
+    v = None
+    try:
+        raw = (e.headers.get("Retry-After") or "").strip()
+    except AttributeError:
+        raw = ""
+    if raw:
+        try:
+            v = float(raw)
+        except ValueError:
+            try:
+                from email.utils import parsedate_to_datetime
+                v = parsedate_to_datetime(raw).timestamp() - now()
+            except (TypeError, ValueError):
+                v = None
+    return None if v is None else min(BACKOFF_MAX, max(RETRY_MIN, v))
+
+
+def usage_path(svc):
+    return os.path.join(CACHE, "usage-" + hashlib.sha1(svc.encode()).hexdigest()[:10] + ".json")
+
+
+def _norm(c):
+    c = c or {}
+    if "five_hour" in c:  # cache written by an older gate: a bare reading
+        return {"good": c}
+    return {} if "error" in c else c
+
+
+def cache_update(path, fn):
+    """Read-modify-write the shared usage cache under a lock, so concurrent hooks never lose each other's update."""
+    try:
+        cm = locked(path + ".lock", timeout=5)
+        got = cm.__enter__()
+    except OSError:
+        cm, got = None, False  # no cache folder: go on without the lock
+    try:
+        c = _norm(rjson(path))
+        r = fn(c)
+        cache_write(path, c)
+        return c, r
+    finally:
+        if cm:
+            cm.__exit__(None, None, None)
+
+
+def _fallback(c):
+    """The last good reading while it is fresh enough (marked stale), else the error and how long it has lasted."""
+    good, err = c.get("good"), c.get("err") or {}
+    if err.get("login"):
+        return {"ts": err.get("ts", now()), "error": err["error"], "login": True}
+    if good and now() - good.get("ts", 0) < STALE_OK:
+        return dict(good, stale=True)
+    since = good.get("ts") if good else c.get("err_since", err.get("ts", now()))
+    return {"ts": err.get("ts", now()), "error": err.get("error", "usage unreadable"), "transient": True,
+            "kind": err.get("kind", "network"), "down_for": now() - since,
+            "retry_at": c.get("retry_after_until") or (err.get("ts", now()) + HOOK_TTL)}
+
+
+def notice_due(svc, key="err_told"):
+    """True once an hour per account (not per session): the stamp lives in the shared cache."""
+    def f(c):
+        if now() - c.get(key, 0) > 3600:
+            c[key] = now()
+            return True
+        return False
+    return cache_update(usage_path(svc), f)[1]
+
+
 def usage(svc, ttl):
+    """Latest reading. The cache keeps the last good reading apart from errors (`good`), so a 429 or a network
+    blip never erases it: it is returned marked `stale` while younger than STALE_OK. After a 429 every process
+    skips fetching until `retry_after_until`."""
     fake = os.environ.get("USAGE_GATE_FAKE")  # tests: "five_hour_pct,seven_day_pct"
     if fake:
         time.sleep(float(os.environ.get("USAGE_GATE_FAKE_DELAY", 0)))
         a, b = (float(x) for x in fake.split(","))
         return {"ts": now() - float(os.environ.get("USAGE_GATE_FAKE_AGE", 0)), "five_hour": {"pct": a, "resets_at": None}, "seven_day": {"pct": b, "resets_at": None}}
-    path = os.path.join(CACHE, "usage-" + hashlib.sha1(svc.encode()).hexdigest()[:10] + ".json")
-    c = rjson(path)
-    if c and now() - c.get("ts", 0) < ttl:
-        return c
+    path = usage_path(svc)
+    c = _norm(rjson(path))
+    good = c.get("good")
+    if good and now() - good.get("ts", 0) < ttl:
+        return good
+    if now() < c.get("retry_after_until", 0):
+        return _fallback(c)
+    err = c.get("err")
+    if err and ttl > 0 and "retry_after_until" not in c and now() - err.get("ts", 0) < min(ttl, HOOK_TTL):
+        return _fallback(c)  # a fresh error is reused like a reading
     try:
-        c = fetch_usage(svc)
+        r = fetch_usage(svc)
     except Exception as e:
-        err = {"ts": now(), "error": "%s: %s" % (type(e).__name__, e)}
-        cache_write(path, err)
-        log("usage error for %s: %s" % (svc, err["error"]))
-        return err
-    cache_write(path, c)
-    return c
+        def fail(c):
+            err = c["err"] = {"ts": now(), "error": "%s: %s" % (type(e).__name__, e)}
+            if _login_problem(e):
+                err["login"] = True
+                return
+            is429 = getattr(e, "code", 0) == 429
+            err["kind"] = "rate-limited" if is429 else "network"
+            c.setdefault("err_since", now())
+            if is429:
+                ra = _retry_after(e)
+                if ra is None:
+                    ra = min(BACKOFF_MAX, max(BACKOFF_MIN, 2 * c.get("backoff", BACKOFF_MIN / 2)))
+                c["backoff"] = ra
+                c["retry_after_until"] = now() + ra
+            else:  # no stale back-off window may disable the fresh-error reuse
+                c.pop("retry_after_until", None)
+                c.pop("backoff", None)
+        c, _ = cache_update(path, fail)
+        log("usage error for %s: %s" % (svc, c["err"]["error"]))
+        return _fallback(c)
+
+    def ok(c):
+        if not c.get("good") or c["good"].get("ts", 0) <= r.get("ts", 0):
+            c["good"] = r
+        for k in ("err", "err_since", "retry_after_until", "backoff"):
+            c.pop(k, None)
+    c, _ = cache_update(path, ok)
+    return c["good"]
 
 
 def level(s, u):
@@ -988,7 +1109,7 @@ def hook():
         sys.exit(0)
     man = s.get("manual")
     if "error" in u and not man:
-        if ev == "PostToolUse" and now() - s.get("err_told", 0) > 3600:
+        if ev == "PostToolUse" and u.get("login") and now() - s.get("err_told", 0) > 3600:
             s["err_told"] = now()
             save_sess(s)
             notify("Can't read usage for %s. Log in again." % (s.get("email") or s["service"]), s)
@@ -996,6 +1117,14 @@ def hook():
                     "%s. Gating is off until then; carry on." % (u["error"],
                     "`CLAUDE_CONFIG_DIR=~/.claude-appacct claude /login` (app account) or `claude /login` (CLI "
                     "account)" if has_keychain() else "`claude /login`"), event="PostToolUse")
+        elif (ev == "PostToolUse" and not u.get("login") and u.get("down_for", 0) > STALE_OK
+              and notice_due(s["service"])):
+            mins = int(u["down_for"] // 60)
+            again = max(1, int(round((u.get("retry_at", now()) - now()) / 60)))
+            msg = ("Can't read usage for %s for %d min (%s); gating paused until it reads again (next try in about "
+                   "%d min)." % (s.get("email") or s["service"], mins, u.get("kind", "network"), again))
+            notify(msg, s)
+            out(ctx="usage-gate: %s Tell the user in one line; carry on." % msg, event="PostToolUse")
         sys.exit(0)
     if ev != "PreToolUse":
         sys.exit(0)
@@ -1003,6 +1132,8 @@ def hook():
     lv = "ok" if "error" in u else level(s, u)
     ph = s.get("phase", "run")
     ov = s.get("override")
+    if lv == "ok" and u.get("stale") and (ph != "run" or ov):  # only a fresh reading may lift a stop or pause
+        lv = "hard" if ph.endswith("hard") else "soft"
     t = now()
     if man == "stop":
         lv, ov = "hard", None
@@ -1152,7 +1283,7 @@ def main2(argv):
              "armed_at": now(), "debug_keys": 0, "project": os.path.basename(os.getcwd())}
         must_save(s, replace=True)
         os.makedirs(note_dir(sid), exist_ok=True)
-        u = usage(svc, 0)
+        u = usage(svc, 60)
         if "error" in u:
             print("Armed, but usage can't be read: %s" % u["error"])
             return
@@ -1210,8 +1341,8 @@ def main2(argv):
                 return
             if not s.get("manual") and now() - last >= WAIT_POLL:
                 last = now()
-                u = usage(s["service"], 0)
-                if "error" not in u and level(s, u) == "ok":
+                u = usage(s["service"], 60)
+                if "error" not in u and not u.get("stale") and level(s, u) == "ok":
                     s.update(phase="run", override=None, told=None)
                     must_save(s)
                     notify("Limits reset (%s). Resuming." % figures(u), s, u)
