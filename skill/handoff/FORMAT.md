@@ -132,6 +132,7 @@ Written only by `hk run <label> --record -- <command>`. Never edit it: each row 
 | `machines_check` | none. A command run before `hk run`; if it fails, `hk run` refuses to start and prints why |
 | `external_refs` | `[]`. Absolute paths that Read first / Read when may cite (see Refs) |
 | `budget_ref`, `budget_pack` | 0 (off). `hk pack` WARNs for each ref above `budget_ref` characters (cite `file#section` instead) and FAILs (exit 1) when the pack is above `budget_pack` |
+| `inline_ref_max` | 0 (off). `hk pack` lists a ref whose content is above this many characters (size, how to read a section, its headings) instead of inlining it, so whole source files or big plans named in Read do not bloat packs |
 
 `hk facts` also lists the last 10 rows of `.hk/jobs.tsv` (free tab-separated rows for detached jobs) beside the State `Running:` lines.
 

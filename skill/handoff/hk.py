@@ -51,6 +51,7 @@ DEFAULTS = {
     "external_refs": [],
     "budget_ref": 0,
     "budget_pack": 0,
+    "inline_ref_max": 0,
 }
 
 VERSION = "4"
@@ -79,7 +80,7 @@ CHECK_MEANINGS = {
 }
 NAME_RE = re.compile(r"^[A-Za-z0-9._/][A-Za-z0-9._/-]*$")
 INT_KEYS = ["budget_handoff", "budget_boot", "read_budget", "inline_under", "budget_ref",
-            "budget_pack"]
+            "budget_pack", "inline_ref_max"]
 PATH_KEYS = ["handoff", "context_map", "ledger", "briefs_dir", "decisions", "lessons_dir",
              "metrics", "learned"]
 LOCAL_LEDGER = ".hk/ledger.tsv"
@@ -1006,6 +1007,19 @@ def ref_block(ref, content):
     return "=== %s (%d chars)\n%s" % (ref, len(content), content)
 
 
+def listed_ref_block(ref, content, limit, prefix):
+    """Return a '=== ref NOT INLINED' block: the size, how to read parts, and the Markdown headings."""
+    file_part = ref.split("#", 1)[0]
+    headings = [line for line in content.split("\n") if re.match(r"#{1,3} ", line)]
+    lines = ["=== %s (%d chars) NOT INLINED (over inline_ref_max %d)" % (ref, len(content), limit),
+             "Read only the parts your task needs: `%s get %s#<heading>` for a section, "
+             "or your file tools for code." % (prefix, file_part)]
+    if headings:
+        lines.append("Headings:")
+        lines.extend(headings[:60])
+    return "\n".join(lines)
+
+
 # ------------------------------------------------------------------ commands
 
 def hk_command(root):
@@ -1259,6 +1273,11 @@ def cmd_pack(args):
             _, content = resolve_ref(root, ref, None, cfg)
         except ExternalMissing as err:
             warns.append("WARN %s" % err)
+            continue
+        if cfg["inline_ref_max"] and len(content) > cfg["inline_ref_max"]:
+            block = listed_ref_block(ref, content, cfg["inline_ref_max"], hk_command(root))
+            chunks.append(block)
+            sizes.append((ref, len(block)))
             continue
         block = ref_block(ref, content)
         if cfg["budget_ref"] and len(block) > cfg["budget_ref"]:

@@ -2170,6 +2170,25 @@ class TestRound5(ProjectCase):
             self.assertIn(name, warn[0])
         self.assertNotIn("docs/d.md", warn[0])
 
+    def test_pack_lists_refs_over_inline_ref_max_instead_of_inlining(self):
+        """inline_ref_max: a ref above it is listed with its size and headings, not inlined."""
+        self.p.write("docs/big.md", "# Big\n## Part one\n" + "y" * 3000 + "\n## Part two\nz\n")
+        self.p.replace("docs/CONTEXT_MAP.md", "docs/arch.md#Overview;",
+                       "docs/big.md; docs/arch.md#Overview;")
+        self.p.commit("big ref")
+        self.config(inline_ref_max=1000)
+        code, out, err = self.p.hk("pack", "task-1")
+        self.assertEqual(code, 0, out + err)
+        self.assertNotIn("y" * 100, out)
+        self.assertRegex(out, r"=== docs/big.md \(\d+ chars\) NOT INLINED")
+        self.assertIn("## Part one", out)
+        self.assertIn("## Part two", out)
+        self.assertRegex(out, r"hk(\.py)? get docs/big.md#<heading>")
+        self.assertIn("=== docs/arch.md#Overview", out)  # small ref still inlined
+        self.config()
+        code, out, err = self.p.hk("pack", "task-1")
+        self.assertIn("y" * 100, out)  # default 0 = inline everything, as before
+
     # -- 5. verify base -----------------------------------------------------
 
     def merged_branch(self, base_field):

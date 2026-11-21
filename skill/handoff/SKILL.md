@@ -6,7 +6,7 @@ description: End-of-session handoff for any project. Run at the end of every wor
 
 Goal: a fresh session, on another machine, with no transcript, runs one command, reads its short output and continues without re-investigating anything and without loading the project. A handoff that is not pushed has not happened. No narration while doing this; work through the steps and report at the end.
 
-`hk` below means `python3 <this skill's folder>/hk.py`. Whatever a rule can check, `hk` checks. Do not repeat its checks by reading files, and do not argue with a `FAIL`: fix the cause. File formats are in `FORMAT.md` beside this file; open it only when writing one of those files. Optional `hk.json` keys (`procedure`, `checks`, `machines_check`, `external_refs`, `budget_ref`, `budget_pack`, `doc_paths`) and the State `Running:` line are described there.
+`hk` below means `python3 <this skill's folder>/hk.py`. Whatever a rule can check, `hk` checks. Do not repeat its checks by reading files, and do not argue with a `FAIL`: fix the cause. File formats are in `FORMAT.md` beside this file; open it only when writing one of those files. Optional `hk.json` keys (`procedure`, `checks`, `machines_check`, `external_refs`, `budget_ref`, `budget_pack`, `inline_ref_max`, `doc_paths`) and the State `Running:` line are described there.
 
 ## 0. Project rules first
 
