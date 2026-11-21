@@ -21,7 +21,7 @@ Reply to the user in one line with what it printed (account, thresholds, current
 
 ## Phone commands (Telegram)
 
-While armed, before you end a turn that waits for the user, start `python3 -I ~/.claude/usage-gate/gate.py listen` with run_in_background (one per session; a new one ends the old one). The owner can send `/status`, `/stop`, `/pause`, `/continue`, `/resume`, `/off`, `/help` from the phone. When `listen` exits, do exactly what it printed: continue the work, pack up (as for packing), hard stop (as for hard stop), or carry on ungated after `/off`. If it says Telegram is not set up, skip it.
+While armed, before you end a turn that waits for the user, start `python3 -I ~/.claude/usage-gate/gate.py listen` with run_in_background (one per session; a new one ends the old one). Alerts also carry buttons (Continue/Pause, Resume/Status) that act on exactly that session, and `gate.py telegram menu` sets the "/" command list. The owner can send `/status`, `/stop`, `/pause`, `/continue`, `/resume`, `/off`, `/help` from the phone. When `listen` exits, do exactly what it printed: continue the work, pack up (as for packing), hard stop (as for hard stop), or carry on ungated after `/off`. If it says Telegram is not set up, skip it.
 
 When the hook says stop or pause and the message came from the owner's phone, behave as for hard stop or packing: write `RESUME.md`, run `gate.py wait` in the background. A phone `/stop` or `/pause` holds until the owner sends `/resume` or `/continue`, even if usage is low.
 

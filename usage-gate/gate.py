@@ -31,8 +31,22 @@ LOG = os.path.join(GATE, "gate.log")
 CONFIG = os.path.join(GATE, "config.json")
 
 
+def _is_installed_copy():
+    """The copy the hook runs (~/.claude/usage-gate/gate.py) never honours test overrides, whatever the env says."""
+    inst = os.path.expanduser("~/.claude/usage-gate/gate.py")
+    return os.path.realpath(__file__) == os.path.realpath(inst)
+
+
+def testenv(name, default=None):
+    """Test-only overrides (fake usage, fake API URLs) count only in a process started with USAGE_GATE_TEST=1.
+    The hook denies any Bash command naming USAGE_GATE_*, so the model cannot set them for a gate command."""
+    if os.environ.get("USAGE_GATE_TEST") != "1" or _is_installed_copy():
+        return default
+    return os.environ.get(name, default)
+
+
 def platform():
-    return os.environ.get("USAGE_GATE_PLATFORM") or sys.platform
+    return testenv("USAGE_GATE_PLATFORM") or sys.platform
 
 
 def launcher(plat=None):
@@ -41,26 +55,30 @@ def launcher(plat=None):
 
 
 def has_keychain():
-    return platform() == "darwin" and not os.environ.get("USAGE_GATE_NO_KEYCHAIN") and shutil.which("security") is not None
+    return platform() == "darwin" and not testenv("USAGE_GATE_NO_KEYCHAIN") and shutil.which("security") is not None
 
 
 SELF = launcher() + " -I ~/.claude/usage-gate/gate.py"
 DEFAULT_SVC = "Claude Code-credentials"
 CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 TOKEN_URL = "https://platform.claude.com/v1/oauth/token"
-API = os.environ.get("USAGE_GATE_API") or "https://api.anthropic.com"
+API = testenv("USAGE_GATE_API") or "https://api.anthropic.com"
 LOCK_TIMEOUT = float(os.environ.get("USAGE_GATE_LOCK_TIMEOUT") or 10)  # seconds a lock is waited for; also the longest a fallback lock file counts as live
 LOCK_STALE = None   # tests: stale age override for fallback lock files (default: the wait timeout)
 POLL_LOCK_STALE = 120  # the poll lock is held across network calls
 STALE_OK = 15 * 60   # seconds an old reading still gates after a transient read error
-RETRY_MIN = 10   # floor for a Retry-After value
 BACKOFF_MIN, BACKOFF_MAX = 60, 15 * 60   # 429 back-off without Retry-After: 60 s doubling to 15 min
+FETCH_SLOT = 30   # seconds a process's claim to fetch blocks the others (longer than the 15 s HTTP timeout)
 HOOK_TTL = 120   # seconds a usage reading is reused by the hook
 WAIT_POLL = 300  # seconds between readings while paused
 NEW_WORK = {"Agent", "Task", "Workflow", "ScheduleWakeup", "CronCreate", "RemoteTrigger",
             "mcp__ccd_session__start_session", "mcp__ccd_session__hand_off_to_session"}
 HARD_OK = {"Read", "TaskStop", "TaskOutput", "SendMessage", "PushNotification", "SubagentHandback"}
-GATE_CMD = re.compile(r"usage-gate/gate\.py\s+(arm|disarm|status|continue|resume|pause|timer|wait|listen|accounts|telegram)\b")
+# A command is auto-allowed only when it is one gate call and nothing else: no chaining, redirects, substitution,
+# quotes, newlines or env-var prefix (anything else goes through normal gating).
+GATE_CMD = re.compile(r"^[ \t]*(?:python3?)[ \t]+(?:-I[ \t]+)?~/\.claude/usage-gate/gate\.py[ \t]+"
+                      r"(?:arm|disarm|status|continue|resume|pause|timer|wait|listen|accounts|telegram)"
+                      r"(?:[ \t]+[\w.,:=@/-]+)*[ \t]*$")
 WINDOWS = (("five_hour", "5-hour"), ("seven_day", "weekly"))
 
 
@@ -239,7 +257,7 @@ def tg_conf():
 
 def tg_call(token, method, payload=None):
     """Telegram Bot API call. The token lives only in the URL; errors are scrubbed before they reach a log."""
-    base = os.environ.get("USAGE_GATE_TELEGRAM_API", TG_API).rstrip("/")
+    base = testenv("USAGE_GATE_TELEGRAM_API", TG_API).rstrip("/")
     data = json.dumps(payload or {}).encode()
     req = urllib.request.Request("%s/bot%s/%s" % (base, token, method), data=data,
                                  headers={"Content-Type": "application/json", "User-Agent": "usage-gate"})
@@ -258,12 +276,32 @@ def machine_name(c):
     return c.get("machine") or host.split(".")[0]
 
 
+BTN_PREFIX = 12   # callback_data carries the action and this many characters of the session id (64-byte limit)
+
+
+def keyboard(phase, sid):
+    """Inline buttons for an alert about session `sid` in `phase`: one row, each button addressing that session."""
+    if not sid:
+        return None
+    if phase == "asked":
+        acts = (("Continue", "continue"), ("Pause", "pause"))
+    elif phase == "hard" or phase.startswith("paused"):
+        acts = (("Resume", "resume"), ("Status", "status"))
+    else:
+        acts = (("Status", "status"),)
+    return [{"text": label, "callback_data": "%s:%s" % (act, sid[:BTN_PREFIX])} for label, act in acts]
+
+
 def tg_send(c, text, email="", sid=""):
     parts = [machine_name(c)] + ([email] if email else [])
     if sid:  # name the session so two on one machine and account can be told apart
         parts.append(("%s #%s" % ((load_sess(sid) or {}).get("project") or "", sid[:4])).strip())
     prefix = "[%s]" % " \u00b7 ".join(parts)
-    res = tg_call(c["token"], "sendMessage", {"chat_id": c["chat_id"], "text": prefix + " " + text})
+    body = {"chat_id": c["chat_id"], "text": prefix + " " + text}
+    kb = keyboard((load_sess(sid) or {}).get("phase", "run") if sid else "", sid)
+    if kb:
+        body["reply_markup"] = {"inline_keyboard": [kb]}
+    res = tg_call(c["token"], "sendMessage", body)
     if sid and isinstance(res, dict) and res.get("message_id"):
         try:  # remember which session this message was about, so a reply to it addresses that session
             with locked(TG_MSGS + ".lock"):
@@ -279,7 +317,7 @@ def tg_send(c, text, email="", sid=""):
 
 def notify(text, s=None, u=None):
     """macOS notification (macOS only) plus Telegram when configured. Never raises, never blocks long."""
-    if os.environ.get("USAGE_GATE_QUIET"):
+    if testenv("USAGE_GATE_QUIET"):
         log("notify(quiet): " + text)
         return
     if sys.platform == "darwin" and not os.environ.get("USAGE_GATE_NO_OSASCRIPT"):
@@ -311,6 +349,16 @@ def notify(text, s=None, u=None):
         log("telegram send failed: %s" % type(e).__name__)
 
 
+MENU = (("status", "Usage and phase of each armed session"), ("stop", "Hard stop now"),
+        ("pause", "Pack up now"), ("continue", "Go on past the soft limit"), ("resume", "Resume a paused session"),
+        ("off", "Disarm the gate"), ("help", "List the commands"))
+
+
+def tg_set_menu(token):
+    """The list Telegram shows when the owner types "/"."""
+    tg_call(token, "setMyCommands", {"commands": [{"command": k, "description": d} for k, d in MENU]})
+
+
 def cmd_telegram(argv):
     argv = list(argv)
     if "--session" in argv:  # injected by the hook; not needed here
@@ -336,6 +384,15 @@ def cmd_telegram(argv):
             log("telegram test failed: %s" % e)
             raise SystemExit("usage-gate: Telegram test failed: %s" % e)
         print("Test message sent.")
+    elif sub == "menu":
+        c = tg_conf()
+        if not c:
+            raise SystemExit("usage-gate: Telegram is not set up. Run: gate.py telegram setup")
+        try:
+            tg_set_menu(c["token"])
+        except Exception as e:
+            raise SystemExit("usage-gate: setting the command menu failed: %s" % e)
+        print("Command menu set.")
     elif sub == "setup":
         token = (getpass.getpass("Bot token: ") if sys.stdin.isatty() else sys.stdin.readline()).strip()
         if not token:
@@ -369,9 +426,14 @@ def cmd_telegram(argv):
             tg_send(c, "usage-gate is connected.")
         except Exception as e:
             raise SystemExit("usage-gate: saved, but the test message failed: %s" % e)
+        try:
+            tg_set_menu(token)
+        except Exception as e:
+            log("telegram menu failed: %s" % e)
+            print("Note: the command menu was not set (%s); run: gate.py telegram menu" % e)
         print("Telegram set up (chat %s). Test message sent." % chat)
     else:
-        print("usage: gate.py telegram setup [--chat <id>] (token on stdin) | test | poll")
+        print("usage: gate.py telegram setup [--chat <id>] (token on stdin) | test | menu | poll")
 
 # ---------- Telegram commands (D9, D11) ----------
 CMDS = ("status", "stop", "pause", "continue", "resume", "off", "help")
@@ -417,7 +479,8 @@ def bump(s, name):
 
 def do_continue(s):
     u = usage(s["service"], 60)
-    lv = "ok" if "error" in u else level(s, u)
+    # Unreadable usage (e.g. 429): the owner said go on, so hold until the hard limit; never clear the override.
+    lv = "soft" if "error" in u else level(s, u)
     s.update(phase="run", override=None if lv == "ok" else lv, told=None, manual=None)
     must_save(s)
     return "Go on. " + ("Next gate at %g%%." % s["hard"] if lv == "soft" else
@@ -459,6 +522,7 @@ def apply_command(s, name):
     return txt
 
 
+TG_OK = os.path.join(GATE, "telegram-ok")   # when this machine last read Telegram successfully
 TG_DONE = os.path.join(GATE, "telegram-done.json")   # update id -> targets already answered (retry after a busy save)
 
 
@@ -528,6 +592,57 @@ def handle_message(c, m, uid=None):
             done_mark(uid, s["session"])
 
 
+def answer_callback(c, cq, text):
+    try:
+        tg_call(c["token"], "answerCallbackQuery", {"callback_query_id": cq.get("id"), "text": text[:150]})
+    except RuntimeError as e:
+        log("telegram answerCallbackQuery failed: %s" % e)
+
+
+def handle_callback(c, cq, uid=None, fresh=True):
+    """A button press from the configured chat: apply its action to exactly the session its data names, and
+    always answer the press (so the button stops spinning), saying why when nothing was applied. `fresh`: this
+    machine was reading Telegram recently, so the press cannot be older than the age limit (a press has no
+    date of its own; the alert it sits on may be old)."""
+    m = cq.get("message") or {}
+    if str((m.get("chat") or {}).get("id")) != str(c["chat_id"]):
+        return
+    act, _, pre = (cq.get("data") or "").partition(":")
+    if act not in ("continue", "pause", "resume", "status") or not pre:
+        return
+    names = []
+    try:
+        names = sorted(n for n in os.listdir(SESS) if n.endswith(".json"))
+    except OSError:
+        pass
+    mine = [x for x in (rjson(os.path.join(SESS, n)) for n in names) if x and x.get("session")]
+    mine = [x for x in mine if x["session"] == pre] or [x for x in mine if x["session"].startswith(pre)]
+    if not mine:
+        return  # another machine's session, left for its own poller
+    target = [load_sess(x["session"]) or x for x in mine if x.get("armed")]
+    if not target:
+        answer_callback(c, cq, "That session is no longer armed.")
+        return
+    if not fresh:
+        answer_callback(c, cq, "Too old (this machine was not reading Telegram). Send /%s." % act)
+        return
+    for s in target:
+        if uid is not None and s["session"] in done_mark(uid):
+            continue
+        txt = ""
+        try:
+            txt = apply_command(s, act)
+            log("telegram button %s -> %s" % (act, s["session"]))
+            tg_send(c, txt, s.get("email", ""), s["session"])
+        except SaveBusy:
+            raise
+        except Exception as e:
+            log("telegram button failed for %s: %s: %s" % (s["session"], type(e).__name__, str(e).replace(c["token"], "<token>")))
+        answer_callback(c, cq, txt or "Could not apply that.")
+        if uid is not None:
+            done_mark(uid, s["session"])
+
+
 def tg_poll(claimed=False):
     """One short getUpdates (timeout 0), at most once per poll_interval per machine. Never raises.
     `claimed`: the hook already took the rate-limit slot for this child."""
@@ -541,7 +656,7 @@ def tg_poll(claimed=False):
             with open(TG_POLLED, "w", encoding="utf-8") as f:
                 f.write(str(now()))
             try:
-                ups = tg_call(c["token"], "getUpdates", {"timeout": 0, "allowed_updates": ["message"]}) or []
+                ups = tg_call(c["token"], "getUpdates", {"timeout": 0, "allowed_updates": ["message", "callback_query"]}) or []
             except RuntimeError as e:
                 log("telegram poll failed: %s" % e)
                 if "409" in str(e):  # another poller holds the bot: back off
@@ -550,9 +665,21 @@ def tg_poll(claimed=False):
                 return
             last = (rjson(TG_LAST, {}) or {}).get("last_update_id", 0)
             ack, leading, t = None, True, now()
+            try:
+                with open(TG_OK, encoding="utf-8") as f:
+                    prev_ok = float(f.read())
+            except Exception:
+                prev_ok = t  # never read before: nothing can be stale
+            fresh = t - prev_ok <= TG_CMD_MAX_AGE
+            try:
+                with open(TG_OK, "w", encoding="utf-8") as f:
+                    f.write(str(t))
+            except OSError:
+                pass
             for u in sorted(ups, key=lambda x: x.get("update_id", 0)):
-                uid, m = u.get("update_id", 0), u.get("message") or {}
-                old = t - m.get("date", t) > TG_CMD_MAX_AGE
+                uid, m, cq = u.get("update_id", 0), u.get("message") or {}, u.get("callback_query")
+                # only message dates decide what is dropped from the shared queue; a stale press is answered, never acked
+                old = (not cq) and t - m.get("date", t) > TG_CMD_MAX_AGE
                 if leading and old:
                     ack = uid + 1
                 else:
@@ -560,7 +687,7 @@ def tg_poll(claimed=False):
                 if uid <= last or old:
                     continue
                 try:
-                    handle_message(c, m, uid)
+                    handle_callback(c, cq, uid, fresh) if cq else handle_message(c, m, uid)
                 except SaveBusy as e:  # not applied: leave the id where it was so the next poll retries it
                     log("telegram command busy: %s" % e)
                     break
@@ -601,6 +728,91 @@ def start_poll_child():
         log("telegram poll start failed: %s" % type(e).__name__)
 
 
+def _stamp():
+    try:
+        st = os.stat(__file__)
+        return (st.st_size, st.st_mtime_ns)
+    except OSError:
+        return None
+
+
+_START_STAMP = _stamp()
+_PENDING = None   # a changed stamp must hold across two loop turns before it counts (an installer may be mid-write)
+
+
+def _resume_file(pid):
+    return os.path.join(GATE, "resume-%d.json" % pid)
+
+
+def resumed(cmd):
+    """State a loop handed to itself before re-executing into a newer gate.py (empty on a normal start). It lives
+    in GATE/resume-<pid>.json, read only when the pid it names is this process (exec keeps the pid) or its parent
+    (the Windows wrapper), then deleted."""
+    argv = sys.argv
+    if "--resume-pid" not in argv:
+        return {}
+    k = argv.index("--resume-pid")
+    try:
+        pid = int(argv[k + 1])
+    except (IndexError, ValueError):
+        pid = -1
+    del argv[k:k + 2]
+    if pid not in (os.getpid(), os.getppid() if hasattr(os, "getppid") else -2):
+        return {}
+    f = _resume_file(pid)
+    d = rjson(f, {}) or {}
+    try:
+        os.remove(f)
+    except OSError:
+        pass
+    return d.get("state", {}) if d.get("cmd") == cmd else {}
+
+
+def _is_nt():
+    return testenv("USAGE_GATE_NT") == "1" or os.name == "nt"
+
+
+def reexec_if_updated(cmd, state):
+    """Called once per loop turn: when gate.py changed on disk since this process started (and stayed changed for
+    a second turn, and compiles), replace the process by the new code carrying `state`. On POSIX that is exec (same
+    pid, same stdout, so the background task stays the same); on Windows exec would end the parent, so the new
+    code runs as a child on the same stdio and this process exits with its exit code."""
+    global _START_STAMP, _PENDING
+    cur = _stamp()
+    if _START_STAMP is None or cur is None or cur == _START_STAMP:
+        _PENDING = None
+        return
+    if cur != _PENDING:
+        _PENDING = cur
+        return
+    try:
+        with open(__file__, encoding="utf-8") as f:
+            compile(f.read(), __file__, "exec")
+    except (OSError, SyntaxError, ValueError) as e:
+        log("gate.py updated but not loadable (%s): keeping the running code" % type(e).__name__)
+        _START_STAMP, _PENDING = cur, None  # log once per version, not every turn
+        return
+    log("gate.py updated: restarting %s" % cmd)
+    args = [a for a in sys.argv[1:]]
+    pid = os.getpid()
+    try:
+        wjson(_resume_file(pid), {"cmd": cmd, "state": state})
+        args += ["--resume-pid", str(pid)]
+        cmdline = [sys.executable, "-I", os.path.abspath(__file__)] + args
+        sys.stdout.flush()
+        if _is_nt():
+            rc = subprocess.run(cmdline).returncode
+            sys.exit(rc)
+        os.execv(sys.executable, cmdline)
+    except OSError as e:  # keep running the old code rather than die
+        log("gate.py restart failed: %s" % type(e).__name__)
+        _START_STAMP, _PENDING = cur, None
+        try:
+            os.remove(_resume_file(pid))
+        except OSError:
+            pass
+
+
 def tick(default):
     time.sleep(min(default, float(os.environ.get("USAGE_GATE_TICK", default))))
 
@@ -633,13 +845,18 @@ def cmd_listen(sid):
         print("usage-gate: Telegram is not set up, so no command can reach this session. Run: gate.py telegram setup")
         return
     s = need(sid)
-    seq0 = cmd_seq(s)
-    mine = "%d-%f" % (os.getpid(), now())
     lf = os.path.join(GATE, "listen-%s.json" % re.sub(r"[^A-Za-z0-9_-]", "", sid))
-    wjson(lf, {"token": mine})
-    end = now() + 24 * 3600
+    st = resumed("listen")
+    if st:
+        seq0, mine, end = st["seq0"], st["mine"], st["end"]
+    else:
+        seq0 = cmd_seq(s)
+        mine = "%d-%f" % (os.getpid(), now())
+        wjson(lf, {"token": mine})
+        end = now() + 24 * 3600
     while now() < end:
         tick(5)
+        reexec_if_updated("listen", {"seq0": seq0, "mine": mine, "end": end})
         if (rjson(lf, {}) or {}).get("token") != mine:
             print("usage-gate listen: replaced by a newer listen for this session. Nothing to do.")
             return
@@ -823,7 +1040,9 @@ def _login_problem(e):
 
 
 def _retry_after(e):
-    """Seconds from a Retry-After header (delta-seconds or HTTP-date), floored at RETRY_MIN, capped at BACKOFF_MAX."""
+    """Seconds from a Retry-After header (delta-seconds or HTTP-date), capped at BACKOFF_MAX. A value below
+    BACKOFF_MIN (0, 1, a date in the past) is no guidance: None, so the doubling back-off from 60 s applies.
+    Live 2026-11-21 such a header, floored at 10 s, let every process refetch each 10 s (usage()'s fail())."""
     v = None
     try:
         raw = (e.headers.get("Retry-After") or "").strip()
@@ -838,7 +1057,7 @@ def _retry_after(e):
                 v = parsedate_to_datetime(raw).timestamp() - now()
             except (TypeError, ValueError):
                 v = None
-    return None if v is None else min(BACKOFF_MAX, max(RETRY_MIN, v))
+    return None if v is None or v < BACKOFF_MIN else min(BACKOFF_MAX, v)
 
 
 def usage_path(svc):
@@ -858,11 +1077,12 @@ def cache_update(path, fn):
         cm = locked(path + ".lock", timeout=5)
         got = cm.__enter__()
     except OSError:
-        cm, got = None, False  # no cache folder: go on without the lock
+        cm, got = None, True  # no cache folder: go on without the lock (the write then fails and is logged)
     try:
         c = _norm(rjson(path))
         r = fn(c)
-        cache_write(path, c)
+        if got:  # lock not acquired: the change stays in memory, a racing writer's file is never overwritten
+            cache_write(path, c)
         return c, r
     finally:
         if cm:
@@ -896,25 +1116,46 @@ def usage(svc, ttl):
     """Latest reading. The cache keeps the last good reading apart from errors (`good`), so a 429 or a network
     blip never erases it: it is returned marked `stale` while younger than STALE_OK. After a 429 every process
     skips fetching until `retry_after_until`."""
-    fake = os.environ.get("USAGE_GATE_FAKE")  # tests: "five_hour_pct,seven_day_pct"
+    fake = testenv("USAGE_GATE_FAKE")  # tests: "five_hour_pct,seven_day_pct"
     if fake:
-        time.sleep(float(os.environ.get("USAGE_GATE_FAKE_DELAY", 0)))
+        time.sleep(float(testenv("USAGE_GATE_FAKE_DELAY", 0)))
         a, b = (float(x) for x in fake.split(","))
-        return {"ts": now() - float(os.environ.get("USAGE_GATE_FAKE_AGE", 0)), "five_hour": {"pct": a, "resets_at": None}, "seven_day": {"pct": b, "resets_at": None}}
+        return {"ts": now() - float(testenv("USAGE_GATE_FAKE_AGE", 0)), "five_hour": {"pct": a, "resets_at": None}, "seven_day": {"pct": b, "resets_at": None}}
     path = usage_path(svc)
-    c = _norm(rjson(path))
-    good = c.get("good")
-    if good and now() - good.get("ts", 0) < ttl:
-        return good
-    if now() < c.get("retry_after_until", 0):
-        return _fallback(c)
-    err = c.get("err")
-    if err and ttl > 0 and "retry_after_until" not in c and now() - err.get("ts", 0) < min(ttl, HOOK_TTL):
-        return _fallback(c)  # a fresh error is reused like a reading
+
+    def cached(c):
+        """The reading to use without fetching, or None when a fetch is due."""
+        good = c.get("good")
+        if good and now() - good.get("ts", 0) < ttl:
+            return good
+        if now() < c.get("retry_after_until", 0):
+            return _fallback(c)
+        err = c.get("err")
+        if err and ttl > 0 and "retry_after_until" not in c and now() - err.get("ts", 0) < min(ttl, HOOK_TTL):
+            return _fallback(c)  # a fresh error is reused like a reading
+        return None
+
+    r = cached(_norm(rjson(path)))
+    if r is not None:
+        return r
+
+    def claim(c):  # under the cache lock: exactly one process fetches when a window or reading expires
+        r = cached(c)
+        if r is None and now() < c.get("fetching_until", 0):
+            return _fallback(c)  # another process is fetching right now
+        if r is None:
+            c["fetching_until"] = now() + FETCH_SLOT
+        return r
+    c, r = cache_update(path, claim)
+    if r is not None:
+        return r
     try:
+        # one line per real HTTP fetch, so a log shows who hit the API (caller function, gate command)
+        log("usage fetch for %s by %s (cmd %s)" % (svc, sys._getframe(1).f_code.co_name, " ".join(sys.argv[1:2]) or "-"))
         r = fetch_usage(svc)
     except Exception as e:
         def fail(c):
+            c.pop("fetching_until", None)
             err = c["err"] = {"ts": now(), "error": "%s: %s" % (type(e).__name__, e)}
             if _login_problem(e):
                 err["login"] = True
@@ -928,7 +1169,7 @@ def usage(svc, ttl):
                     ra = min(BACKOFF_MAX, max(BACKOFF_MIN, 2 * c.get("backoff", BACKOFF_MIN / 2)))
                 c["backoff"] = ra
                 c["retry_after_until"] = now() + ra
-            else:  # no stale back-off window may disable the fresh-error reuse
+            elif c.get("retry_after_until", 0) <= now():  # another process's still-valid 429 window stays
                 c.pop("retry_after_until", None)
                 c.pop("backoff", None)
         c, _ = cache_update(path, fail)
@@ -938,7 +1179,7 @@ def usage(svc, ttl):
     def ok(c):
         if not c.get("good") or c["good"].get("ts", 0) <= r.get("ts", 0):
             c["good"] = r
-        for k in ("err", "err_since", "retry_after_until", "backoff"):
+        for k in ("err", "err_since", "retry_after_until", "backoff", "fetching_until"):
             c.pop(k, None)
     c, _ = cache_update(path, ok)
     return c["good"]
@@ -1084,12 +1325,16 @@ def hook():
                         "/resume or /continue from the phone, or `gate.py resume` in a terminal. Do not try to "
                         "lift it yourself; carry out the stop or pause." % ("stopped" if owner == "stop" else "paused"))
 
+    # Test overrides (USAGE_GATE_*) are never the model's to set: an armed session may not run such a command.
+    if ev == "PreToolUse" and tool == "Bash" and "USAGE_GATE_" in ti.get("command", "") and (load_sess(sid) or {}).get("armed"):
+        out("deny", "USAGE GATE: commands that name USAGE_GATE_* variables are not allowed while the gate is armed.")
+
     # Gate commands: always allowed; inject the session id so they work in any app.
-    if ev == "PreToolUse" and tool == "Bash" and GATE_CMD.search(ti.get("command", "")):
+    if ev == "PreToolUse" and tool == "Bash" and GATE_CMD.match(ti.get("command", "")):
         cmd = ti["command"]
         if "--session" not in cmd and sid:
             new = dict(ti)
-            new["command"] = GATE_CMD.sub(lambda m: m.group(0) + " --session " + sid, cmd, count=1)
+            new["command"] = cmd.rstrip() + " --session " + sid
             out("allow", "usage-gate command", updated=new)
         out("allow", "usage-gate command")
 
@@ -1309,31 +1554,53 @@ def main2(argv):
         u = usage(s["service"], HOOK_TTL)
         print(msg_pack(s, u) if "error" not in u else "Pack up, then run `%s wait` in the background." % SELF)
     elif c == "timer":
-        end = now() + s["ask"] * 60
-        seq0 = cmd_seq(s)
-        while now() < end:
-            tick(10)
-            tg_poll()
+        st = resumed("timer")
+        end = st.get("end", now() + s["ask"] * 60)
+        seq0, asked0 = st.get("seq0", cmd_seq(s)), st["asked0"] if "asked0" in st else s.get("asked_at")
+
+        def waiting(x):  # still the same question, still armed
+            return x.get("phase") == "asked" and x.get("armed") and x.get("asked_at") == asked0
+
+        def gone(x):
+            print("usage-gate timer: no longer waiting for an answer (phase now %s). %s"
+                  % (x.get("phase"), instruction(x, seq0) or "Nothing to do."))
+        while True:
+            tg_poll()  # a phone answer is read before any decision, including at the deadline
             s = need(sid)
-            if s.get("phase") != "asked" or not s.get("armed"):
-                print("usage-gate timer: no longer waiting for an answer (phase now %s). %s"
-                      % (s.get("phase"), instruction(s, seq0) or "Nothing to do."))
-                return
-        s.update(phase="packing", told=None)
-        must_save(s)
+            if not waiting(s):
+                return gone(s)
+            if now() >= end:
+                break
+            tick(10)
+            reexec_if_updated("timer", {"end": end, "seq0": seq0, "asked0": asked0})
+        path = sess_path(sid)
+        with locked(path + ".lock") as got:  # check and set under the session lock
+            cur = rjson(path) if got else None
+            if got and not (cur and waiting(cur)):
+                return gone(cur or s)
+            if got:
+                cur.update(phase="packing", told=None)
+                wjson(path, cur)
+                _SNAP[sid] = copy.deepcopy(cur)
+                s = cur
+        if not got:
+            s.update(phase="packing", told=None)
+            must_save(s)
         notify("No answer in %g min: packing up." % s["ask"], s)
         u = usage(s["service"], HOOK_TTL)
         print("usage-gate timer: no answer in %g min. %s" % (s["ask"], msg_pack(s, u) if "error" not in u else ""))
     elif c == "wait":
-        s.update(phase="paused_hard" if s.get("phase") == "hard" else "paused_soft", told=None)
-        must_save(s)
-        if s.get("manual"):  # owner's phone /stop or /pause holds regardless of usage
-            notify("Session paused by you. It holds until you send /resume or /continue.", s)
-        else:
-            notify("Session paused. It resumes when limits drop below %g%%, or send /resume." % s["soft"], s)
-        last = 0
-        seq0 = cmd_seq(s)
+        st = resumed("wait")
+        if not st:  # a restart into newer code goes straight back to waiting
+            s.update(phase="paused_hard" if s.get("phase") == "hard" else "paused_soft", told=None)
+            must_save(s)
+            if s.get("manual"):  # owner's phone /stop or /pause holds regardless of usage
+                notify("Session paused by you. It holds until you send /resume or /continue.", s)
+            else:
+                notify("Session paused. It resumes when limits drop below %g%%, or send /resume." % s["soft"], s)
+        last, seq0 = st.get("last", 0), st.get("seq0", cmd_seq(s))
         while True:
+            reexec_if_updated("wait", {"last": last, "seq0": seq0})
             tg_poll()
             s = need(sid)
             if not s.get("phase", "").startswith("paused") or not s.get("armed"):

@@ -8,7 +8,7 @@ SID = "test-sess"
 class GateBase(unittest.TestCase):
     def setUp(self):
         self.home = tempfile.mkdtemp(prefix="ug home ")
-        self.env = dict(os.environ, HOME=self.home, USAGE_GATE_QUIET="1", CLAUDE_CODE_SESSION_ID=SID)
+        self.env = dict(os.environ, HOME=self.home, USAGE_GATE_QUIET="1", USAGE_GATE_TEST="1", CLAUDE_CODE_SESSION_ID=SID)
         self.env.pop("CLAUDE_CODE_ACCOUNT_UUID", None)
         self.env.pop("CLAUDE_CONFIG_DIR", None)
 
@@ -124,6 +124,65 @@ class GateTest(GateBase):
         d, _ = self.hook("50,99", "Bash", ti={"command": "python3 -I ~/.claude/usage-gate/gate.py telegram test"})
         self.assertEqual(d, "allow")
 
+    CHAINED = ["ls; python3 -I ~/.claude/usage-gate/gate.py status --session 00000000-0000-4000-8000-000000000000",
+               "python3 -I ~/.claude/usage-gate/gate.py status; ls",
+               "true && python3 -I ~/.claude/usage-gate/gate.py status",
+               "ls | python3 -I ~/.claude/usage-gate/gate.py status",
+               "FOO=1 python3 -I ~/.claude/usage-gate/gate.py status",
+               "USAGE_GATE_TEST=1 USAGE_GATE_TELEGRAM_API=http://127.0.0.1:1 python3 -I ~/.claude/usage-gate/gate.py telegram poll",
+               "echo $(python3 -I ~/.claude/usage-gate/gate.py status)",
+               "echo `python3 -I ~/.claude/usage-gate/gate.py status`",
+               "python3 -I ~/.claude/usage-gate/gate.py status\nls",
+               "python3 -I ~/.claude/usage-gate/gate.py status > /tmp/x"]
+
+    def test_chained_env_prefixed_or_subshell_gate_commands_are_denied_at_hard(self):
+        self.arm()
+        self.hook("50,99", "Bash")
+        for c in self.CHAINED:
+            self.assertEqual(self.hook("50,99", "Bash", ti={"command": c})[0], "deny", c)
+        self.assertEqual(self.hook("50,99", "Bash", ti={"command": "python3 -I ~/.claude/usage-gate/gate.py status"})[0], "allow")
+
+    def test_chained_gate_commands_are_denied_under_owner_stop(self):
+        self.arm()
+        p = os.path.join(self.home, ".claude", "usage-gate", "sessions", SID + ".json")
+        s = self.sess()
+        s["manual"] = "stop"
+        with open(p, "w") as f:
+            json.dump(s, f)
+        for c in self.CHAINED:
+            self.assertEqual(self.hook("10,10", "Bash", ti={"command": c})[0], "deny", c)
+
+    def test_usage_gate_env_vars_in_a_bash_command_are_denied_even_when_armed_and_low(self):
+        self.arm()
+        c = "USAGE_GATE_TEST=1 USAGE_GATE_TELEGRAM_API=http://127.0.0.1:1 python3 -I ~/.claude/usage-gate/gate.py telegram poll"
+        self.assertEqual(self.hook("10,10", "Bash", ti={"command": c})[0], "deny")
+        self.assertEqual(self.hook("10,10", "Bash", ti={"command": "echo hi"})[0], "allow")
+
+    def test_test_overrides_are_ignored_without_the_test_flag(self):
+        env = {k: v for k, v in self.env.items() if k != "USAGE_GATE_TEST"}
+        env["USAGE_GATE_API"] = "http://127.0.0.1:1"
+        r = subprocess.run([sys.executable, "-I", "-c", "import sys; sys.path.insert(0, %r); import gate; print(gate.API)"
+                            % os.path.dirname(GATE)], env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(r.stdout.strip(), "https://api.anthropic.com")
+
+    def test_the_installed_copy_ignores_test_overrides_even_with_the_test_flag(self):
+        d = os.path.join(self.home, ".claude", "usage-gate")
+        os.makedirs(d)
+        shutil.copy(GATE, os.path.join(d, "gate.py"))
+        env = dict(self.env, USAGE_GATE_API="http://127.0.0.1:1", USAGE_GATE_NO_KEYCHAIN="1", USAGE_GATE_QUIET="1")
+        code = ("import sys; sys.path.insert(0, %r); import gate; print(gate.API, gate.has_keychain() or 'x', "
+                "'quiet' if gate.testenv('USAGE_GATE_QUIET') else 'loud')" % d)
+        r = subprocess.run([sys.executable, "-I", "-c", code], env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(r.stdout.split()[0], "https://api.anthropic.com")
+        self.assertEqual(r.stdout.split()[-1], "loud")
+
+    def test_arm_and_python_form_gate_commands_are_allowed_at_hard(self):
+        self.arm()
+        self.hook("50,99", "Bash")
+        for c in ("python3 -I ~/.claude/usage-gate/gate.py arm --session 00000000-0000-4000-8000-000000000000 --soft 99 --hard 100 --ask 1",
+                  "python -I ~/.claude/usage-gate/gate.py status"):
+            self.assertEqual(self.hook("50,99", "Bash", ti={"command": c})[0], "allow", c)
+
     def test_arm_without_account_uuid_finds_email_by_login(self):
         os.makedirs(os.path.join(self.home, ".claude", "usage-gate"), exist_ok=True)
         with open(os.path.join(self.home, ".claude", "usage-gate", "config.json"), "w") as f:
@@ -173,7 +232,7 @@ class GateTest(GateBase):
         self.assertEqual(r2.stdout.strip(), "")
 
 class FakeTelegram(http.server.BaseHTTPRequestHandler):
-    sent, updates, fail, hang, code, gets = [], [], False, 0, 0, []
+    sent, updates, fail, hang, code, gets, calls = [], [], False, 0, 0, [], []
 
     def do_POST(self):
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", 0))) or b"{}")
@@ -185,11 +244,13 @@ class FakeTelegram(http.server.BaseHTTPRequestHandler):
             self.end_headers()
             return
         method = self.path.rsplit("/", 1)[-1]
+        cls.calls.append((method, body))
         if method == "getUpdates":
             cls.gets.append(body)
             if body.get("offset"):  # Telegram forgets updates below the offset
                 cls.updates[:] = [u for u in cls.updates if u.get("update_id", 0) >= body["offset"]]
-            res = list(cls.updates)
+            allowed = body.get("allowed_updates")  # like Telegram: only the kinds asked for come back
+            res = [u for u in cls.updates if allowed is None or any(k in u for k in allowed)]
         else:
             res = {"message_id": 101 + len(cls.sent)}
         if method == "sendMessage":
@@ -207,7 +268,7 @@ class TelegramBase(GateBase):
     def setUp(self):
         super().setUp()
         FakeTelegram.sent, FakeTelegram.updates, FakeTelegram.fail, FakeTelegram.hang = [], [], False, 0
-        FakeTelegram.code, FakeTelegram.gets = 0, []
+        FakeTelegram.code, FakeTelegram.gets, FakeTelegram.calls = 0, [], []
         self.srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FakeTelegram)
         threading.Thread(target=self.srv.serve_forever, daemon=True).start()
         self.addCleanup(self.srv.shutdown)
@@ -833,12 +894,14 @@ def load_gate(home, platform=None):
 
 
 class FakeApi(http.server.BaseHTTPRequestHandler):
-    auth, paths, code, five, retry_after = [], [], 200, 31, None
+    auth, paths, code, five, retry_after, delay = [], [], 200, 31, None, 0
 
     def do_GET(self):
         cls = type(self)
         cls.auth.append(self.headers.get("Authorization"))
         cls.paths.append(self.path)
+        if cls.delay:
+            time.sleep(cls.delay)
         if cls.code != 200:
             self.send_response(cls.code)
             if cls.retry_after:
@@ -980,6 +1043,22 @@ class RateLimitTest(GateBase):
     def log_text(self):
         with open(os.path.join(self.home, ".claude", "usage-gate", "gate.log")) as f:
             return f.read()
+
+    def test_continue_while_usage_unreadable_holds_until_hard(self):
+        """Live 2026-11-21: /continue during a 429 left override None, so the soft ask came straight back."""
+        FakeApi.five = 85
+        self.run_nofake("arm")
+        out = self.nofake_hook()
+        self.assertEqual(json.loads(out)["hookSpecificOutput"]["permissionDecision"], "deny")
+        FakeApi.code = 429
+        self.age(1000)  # no good reading left: usage is unreadable
+        r = self.run_nofake("continue")
+        self.assertIn("95", r.stdout)
+        FakeApi.code = 200
+        self.edit_cache(lambda c: [c.pop(k, None) for k in ("retry_after_until", "backoff")])
+        self.age(1000)
+        out = self.nofake_hook()
+        self.assertFalse(out.strip() and json.loads(out)["hookSpecificOutput"].get("permissionDecision") == "deny", out)
 
     def test_429_keeps_the_old_reading_and_still_denies_at_hard(self):
         FakeApi.five = 97
@@ -1125,8 +1204,54 @@ print(bool(u.get('login')), bool(u.get('transient')))
                 return json.load(f)["retry_after_until"] - time.time()
         w = wait_for(formatdate(time.time() + 200, usegmt=True))
         self.assertTrue(150 < w <= 201, w)
-        self.assertTrue(wait_for(1) >= 9, "floor 10 s")
+        self.assertTrue(wait_for(1) >= 55, "a Retry-After under 60 s is no guidance: back off from 60 s")
         self.assertTrue(wait_for(99999) <= 901, "cap 15 min")
+
+    def test_processes_meeting_an_expired_window_make_one_fetch(self):
+        """Four hooks start while the cache is stale: only one may fetch."""
+        self.run_nofake("arm")
+        self.age(300)
+        FakeApi.delay = 1
+        self.addCleanup(setattr, FakeApi, "delay", 0)
+        self.srv.shutdown()
+        self.srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FakeApi)  # concurrent requests
+        threading.Thread(target=self.srv.serve_forever, daemon=True).start()
+        self.env["USAGE_GATE_API"] = "http://127.0.0.1:%d" % self.srv.server_port
+        n0 = len(FakeApi.paths)
+        inp = json.dumps({"hook_event_name": "PreToolUse", "session_id": SID, "tool_name": "Agent", "tool_input": {}})
+        ps = [subprocess.Popen([sys.executable, "-I", GATE, "hook"], stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                               env=self.env, text=True) for _ in range(4)]
+        for p in ps:
+            p.stdin.write(inp)
+            p.stdin.close()
+        for p in ps:
+            p.wait(timeout=30)
+        self.assertEqual(len(FakeApi.paths) - n0, 1)
+
+    def test_cache_update_without_the_lock_writes_nothing(self):
+        r = self.py("""
+os.makedirs(gate.CACHE, exist_ok=True)
+p = gate.usage_path("svc")
+with gate.locked(p + ".lock"):
+    c, _ = gate.cache_update(p, lambda c: c.update(x=1))
+print(os.path.exists(p) and "x" in json.load(open(p)), c.get("x"))
+""")
+        self.assertEqual(r.split(), ["False", "1"])
+
+    def test_a_timeout_during_a_429_window_keeps_the_window(self):
+        r = self.py("""
+os.makedirs(gate.CACHE, exist_ok=True)
+def setw(c):
+    c["retry_after_until"] = time.time() + 300
+    c["backoff"] = 300
+def f(svc):
+    gate.cache_update(gate.usage_path(svc), setw)  # another process meets a 429 while we are fetching
+    raise TimeoutError("timed out")
+gate.fetch_usage = f
+gate.usage("svc", 60)
+print(json.load(open(gate.usage_path("svc"))).get("retry_after_until", 0) - time.time() > 200)
+""")
+        self.assertEqual(r.strip(), "True")
 
     def test_two_sessions_on_one_account_send_one_notice_per_hour(self):
         self.run_nofake("arm")
@@ -1532,6 +1657,364 @@ class InstallerTest(GateBase):
         r = subprocess.run([sys.executable, "-I", gate, "hook"], input="{}", env=self.env,
                            capture_output=True, text=True)
         self.assertEqual(r.returncode, 0)
+
+
+class StormTest(CommandTest):
+    """A 429 stops every fetch on the machine (hook, poll child, listen, continue) for the whole window."""
+    def setUp(self):
+        super().setUp()
+        FakeApi.auth, FakeApi.paths, FakeApi.code, FakeApi.retry_after, FakeApi.five = [], [], 200, None, 85
+        self.api = http.server.HTTPServer(("127.0.0.1", 0), FakeApi)
+        threading.Thread(target=self.api.serve_forever, daemon=True).start()
+        self.addCleanup(self.api.shutdown)
+        self.addCleanup(setattr, FakeApi, "retry_after", None)
+        self.addCleanup(setattr, FakeApi, "five", 31)
+        self.env.update(USAGE_GATE_NO_KEYCHAIN="1", USAGE_GATE_API="http://127.0.0.1:%d" % self.api.server_port)
+        cred = os.path.join(self.home, ".claude", ".credentials.json")
+        os.makedirs(os.path.dirname(cred), exist_ok=True)
+        with open(cred, "w") as f:
+            json.dump({"claudeAiOauth": {"accessToken": "t", "refreshToken": "r",
+                                         "expiresAt": int((time.time() + 3600) * 1000)}}, f)
+
+    def real(self, *args):
+        return subprocess.run([sys.executable, "-I", GATE] + list(args), env=self.env, capture_output=True,
+                              text=True, timeout=30)
+
+    def real_hook(self, tool="Bash", event="PreToolUse"):
+        inp = json.dumps({"hook_event_name": event, "session_id": SID, "tool_name": tool, "tool_input": {}})
+        return subprocess.run([sys.executable, "-I", GATE, "hook"], input=inp, env=self.env, capture_output=True,
+                              text=True, timeout=30).stdout
+
+    def cache(self):
+        d = os.path.join(self.home, ".claude", "usage-gate", "cache")
+        return os.path.join(d, [n for n in os.listdir(d) if n.startswith("usage-") and n.endswith(".json")][0])
+
+    def shift_cache(self, sec):
+        with open(self.cache()) as f:
+            c = json.load(f)
+        c["good"]["ts"] -= sec
+        if "retry_after_until" in c:
+            c["retry_after_until"] -= sec
+            c["err"]["ts"] -= sec
+        with open(self.cache(), "w") as f:
+            json.dump(c, f)
+
+    def test_429_with_tiny_retry_after_holds_across_hook_poll_listen_and_continue(self):
+        """Live 2026-11-21 10:17: Retry-After floored at 10 s, so every process refetched about every 10 s."""
+        self.real("arm", "--ask", "10")
+        self.shift_cache(1000)  # no usable reading left
+        FakeApi.code, FakeApi.retry_after = 429, 1
+        self.real_hook()
+        n = len(FakeApi.paths)
+        self.shift_cache(11)  # 11 s later: a 10 s back-off would be over, a 60 s one is not
+        self.upd("/continue")
+        self.real("telegram", "poll")  # poll child -> do_continue
+        self.upd("/continue")
+        self.real("listen")  # listen -> tg_poll -> do_continue
+        self.real_hook()
+        self.real("continue")
+        self.assertEqual(len(FakeApi.paths), n, "no fetch while the back-off holds")
+        self.assertEqual(self.sess()["override"], "soft")  # /continue during the 429 keeps the override
+        log = self.logtext()
+        self.assertEqual(log.count("usage error"), 1)
+        self.assertEqual(log.count("usage fetch"), log.count("usage error") + 1)  # the arm fetch and the 429
+
+    def test_fetch_log_names_the_caller(self):
+        self.real("arm")
+        self.shift_cache(1000)
+        self.upd("/continue")
+        self.real("telegram", "poll")
+        log = self.logtext()
+        self.assertIn("by main2 (cmd arm)", log)
+        self.assertIn("by do_continue (cmd telegram)", log)
+
+
+class ButtonsTest(CommandTest):
+    def press(self, act, sid=SID, chat=42, age=0):
+        self.uid += 1
+        FakeTelegram.updates.append({"update_id": self.uid, "callback_query": {
+            "id": "cb%d" % self.uid, "from": {"id": 42}, "data": "%s:%s" % (act, sid[:12]),
+            "message": {"message_id": 7, "chat": {"id": chat, "type": "private"}, "date": int(time.time() - age)}}})
+
+    def buttons(self, i=-1):
+        rows = FakeTelegram.sent[i]["reply_markup"]["inline_keyboard"]
+        return [(b["text"], b["callback_data"].split(":")[0]) for r in rows for b in r]
+
+    def test_setup_sets_the_command_menu(self):
+        os.remove(self.conf) if os.path.exists(self.conf) else None
+        FakeTelegram.updates.append({"update_id": 1, "message": {"message_id": 1, "date": int(time.time()),
+                                     "chat": {"id": 42, "type": "private", "first_name": "A"}, "text": "/start"}})
+        self.assertEqual(self.setup().returncode, 0)
+        menu = [b for m, b in FakeTelegram.calls if m == "setMyCommands"]
+        self.assertEqual(len(menu), 1)
+        self.assertEqual([c["command"] for c in menu[0]["commands"]],
+                         ["status", "stop", "pause", "continue", "resume", "off", "help"])
+        self.assertTrue(all(c["description"] for c in menu[0]["commands"]))
+
+    def test_telegram_menu_command(self):
+        r = self.run_gate("telegram", "menu")
+        self.assertEqual(r.returncode, 0, r.stderr)
+        self.assertEqual(len([1 for m, _ in FakeTelegram.calls if m == "setMyCommands"]), 1)
+
+    def test_alerts_carry_buttons_for_their_phase(self):
+        self.arm()
+        self.hook("50,82", "Bash")
+        self.wait_sent(1)
+        self.assertEqual(self.buttons(), [("Continue", "continue"), ("Pause", "pause")])
+        self.assertTrue(FakeTelegram.sent[0]["reply_markup"]["inline_keyboard"][0][0]["callback_data"].endswith(SID[:12]))
+        self.hook("50,99", "Agent")
+        self.wait_sent(2)
+        self.assertEqual(self.buttons(), [("Resume", "resume"), ("Status", "status")])  # hard stop
+        s = self.sess()
+        s.update(phase="paused_soft")
+        with open(os.path.join(self.home, ".claude", "usage-gate", "sessions", SID + ".json"), "w") as f:
+            json.dump(s, f)
+        subprocess.run([sys.executable, "-I", GATE, "telegram", "send", "", SID], input="Session paused.", env=self.env,
+                       capture_output=True, text=True, timeout=30)
+        self.assertEqual(self.buttons(), [("Resume", "resume"), ("Status", "status")])
+        s.update(phase="packing")
+        with open(os.path.join(self.home, ".claude", "usage-gate", "sessions", SID + ".json"), "w") as f:
+            json.dump(s, f)
+        subprocess.run([sys.executable, "-I", GATE, "telegram", "send", "", SID], input="No answer.", env=self.env,
+                       capture_output=True, text=True, timeout=30)
+        self.assertEqual(self.buttons(), [("Status", "status")])
+
+    def poll_until(self, done, fake="10,10", t=20):
+        """A hook's background poll child may hold the poll lock: poll until the press has landed."""
+        end = time.time() + t
+        while time.time() < end:
+            self.poll(fake=fake)
+            if done():
+                return True
+            time.sleep(0.2)
+        return False
+
+    def sess_of(self, sid):
+        with open(os.path.join(self.home, ".claude", "usage-gate", "sessions", sid + ".json")) as f:
+            return json.load(f)
+
+    def answers(self, wait=0):
+        """The answerCallbackQuery calls so far; the child that applied a press answers just after it applies it."""
+        end = time.time() + wait
+        while True:
+            a = [x for m, x in FakeTelegram.calls if m == "answerCallbackQuery"]
+            if a or time.time() >= end:
+                return a
+            time.sleep(0.1)
+
+    def test_button_applies_to_its_own_session_only(self):
+        self.arm()
+        self.run_gate("arm", env=dict(self.env, CLAUDE_CODE_SESSION_ID=SID2))
+        self.hook("50,82", "Bash")
+        subprocess.run([sys.executable, "-I", GATE, "hook"], env=dict(self.env, USAGE_GATE_FAKE="50,82"),
+                       input=json.dumps({"hook_event_name": "PreToolUse", "session_id": SID2, "tool_name": "Bash",
+                                         "tool_input": {}}), capture_output=True, text=True, timeout=30)
+        self.press("continue", SID2)
+        self.assertTrue(self.poll_until(lambda: self.sess_of(SID2)["phase"] == "run", fake="50,82"))
+        b = self.sess_of(SID2)
+        self.assertEqual((b["phase"], b["override"]), ("run", "soft"))
+        self.assertEqual(self.sess()["phase"], "asked")  # session A untouched
+        ans = self.answers(wait=10)
+        self.assertEqual(len(ans), 1)
+        self.assertTrue(ans[0]["callback_query_id"].startswith("cb"))
+
+    def test_pause_and_resume_buttons(self):
+        self.arm()
+        self.press("pause")
+        self.assertTrue(self.poll_until(lambda: self.sess()["phase"] == "packing"))
+        self.press("resume")
+        self.assertTrue(self.poll_until(lambda: self.sess()["phase"] == "run"))
+
+    def test_button_from_another_chat_is_ignored(self):
+        self.arm()
+        self.hook("50,82", "Bash")
+        self.press("continue", chat=999)
+        self.poll(fake="50,82")
+        self.assertEqual(self.sess()["phase"], "asked")
+        self.assertEqual([m for m, _ in FakeTelegram.calls if m == "answerCallbackQuery"], [])
+
+    def test_a_machine_back_from_sleep_does_not_delete_another_machines_fresh_press(self):
+        self.arm()
+        ok = os.path.join(self.home, ".claude", "usage-gate", "telegram-ok")
+        with open(ok, "w") as f:
+            f.write(str(time.time() - 7200))
+        self.press("resume", sid=SID2)  # a press for a session of another machine
+        self.poll_until(lambda: False, t=2)
+        self.assertEqual(len([u for u in FakeTelegram.updates if "callback_query" in u]), 1)
+
+    def test_resume_on_an_old_hard_stop_alert_still_applies_when_the_machine_was_polling(self):
+        """Live-style: the press is new, the alert it sits on is an hour old."""
+        self.arm()
+        self.hook("50,99", "Bash")
+        self.assertEqual(self.sess()["phase"], "hard")
+        self.press("resume", age=3600)
+        self.assertTrue(self.poll_until(lambda: self.sess()["phase"] == "run", fake="10,10"))
+        self.assertEqual(len(self.answers(wait=10)), 1)
+
+    def test_press_after_a_long_gap_is_answered_too_old_and_not_applied(self):
+        self.arm()
+        self.hook("50,99", "Bash")
+        ok = os.path.join(self.home, ".claude", "usage-gate", "telegram-ok")
+        with open(ok, "w") as f:
+            f.write(str(time.time() - 7200))  # this machine last read Telegram two hours ago
+        self.press("resume")
+        self.poll_until(lambda: self.answers(), fake="50,99")
+        self.assertIn("too old", self.answers()[0]["text"].lower())
+        self.assertEqual(self.sess()["phase"], "hard")
+
+    def test_press_for_a_disarmed_session_is_answered(self):
+        self.arm()
+        self.cmd("disarm")
+        self.press("continue")
+        self.poll_until(lambda: self.answers())
+        self.assertIn("no longer armed", self.answers()[0]["text"])
+
+    def test_typed_commands_still_work(self):
+        self.arm()
+        self.hook("50,82", "Bash")
+        self.upd("/continue")
+        self.poll(fake="50,82")
+        self.assertEqual(self.sess()["phase"], "run")
+
+
+class PhoneContinueTest(CommandTest):
+    def test_timer_of_an_old_question_does_not_pack_a_newer_one(self):
+        self.arm(ask="0.1")  # 6 s: room for a loaded machine
+        self.hook("50,82", "Bash")
+        p = subprocess.Popen([sys.executable, "-I", GATE, "timer"], env=dict(self.env, USAGE_GATE_FAKE="50,82"),
+                             stdout=subprocess.PIPE, text=True)
+        time.sleep(0.4)
+        path = os.path.join(self.home, ".claude", "usage-gate", "sessions", SID + ".json")
+        s = self.sess()
+        s["asked_at"] = time.time()  # a fresh question was asked meanwhile: its own timer owns it
+        with open(path, "w") as f:
+            json.dump(s, f)
+        out = p.communicate(timeout=30)[0]
+        self.assertNotIn("no answer", out)
+        self.assertEqual(self.sess()["phase"], "asked")
+
+    def test_soft_ask_then_phone_continue_then_hooks_pass_until_hard(self):
+        self.arm(ask="0")
+        self.assertEqual(self.hook("50,82", "Bash")[0], "deny")  # the soft question
+        self.upd("/continue")
+        self.poll(fake="50,82")
+        out = self.run_gate("timer", fake="50,82").stdout  # the timer of the question wakes after the answer
+        self.assertNotIn("no answer", out)
+        self.assertEqual(self.sess()["phase"], "run")
+        for tool in ("Bash", "Agent", "Edit", "Agent"):
+            self.assertEqual(self.hook("50,82", tool)[0], "allow", tool)
+        self.assertEqual(self.hook("50,96", "Agent")[0], "deny")  # still gates at the hard limit
+
+
+class ReexecTest(CommandTest):
+    """A long-running loop picks up a new gate.py without changing pid or stdout (live 2026-11-21: an old listen
+    kept consuming button presses after the update was installed)."""
+    def copy(self):
+        d = os.path.join(self.home, "gatecopy")
+        os.makedirs(d)
+        self.copy_path = os.path.join(d, "gate.py")
+        shutil.copy(GATE, self.copy_path)
+        self.marker = os.path.join(self.home, "marker")
+        self.addCleanup(lambda: os.path.exists(self.marker) and None)
+
+    def update_copy(self, cmd):
+        with open(self.copy_path) as f:
+            src = f.read()
+        marker = ('if sys.argv[1:2] == [%r]: open(%r, "a").write("%%d %%d" %% (os.getpid(), os.getppid()) + chr(10))\n'
+                  % (cmd, self.marker))
+        src = src.replace("DEFAULT_SVC =", marker + "DEFAULT_SVC =", 1)
+        with open(self.copy_path, "w") as f:
+            f.write(src)
+
+    def wait_marker(self, t=10):
+        end = time.time() + t
+        while time.time() < end:
+            if os.path.exists(self.marker):
+                with open(self.marker) as f:
+                    return f.read().split()[:1]
+            time.sleep(0.1)
+        return []
+
+    def spawn(self, cmd, fake="50,82"):
+        p = subprocess.Popen([sys.executable, "-I", self.copy_path, cmd], env=dict(self.env, USAGE_GATE_FAKE=fake),
+                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.addCleanup(lambda: p.poll() is None and p.kill())
+        return p
+
+    def test_listen_restarts_into_the_new_code_with_the_same_pid_and_still_hears_commands(self):
+        self.copy()
+        self.arm()
+        p = self.spawn("listen")
+        time.sleep(1.0)
+        self.update_copy("listen")
+        self.assertEqual(self.wait_marker(), [str(p.pid)])  # new code ran in the same process
+        self.upd("/continue")
+        out = p.communicate(timeout=30)[0]
+        self.assertIn("Carry on", out)  # the restarted listen kept its start state and heard the command
+
+    def test_windows_path_runs_the_new_code_as_a_child_and_passes_exit_and_output_through(self):
+        self.copy()
+        self.arm()
+        self.env["USAGE_GATE_NT"] = "1"  # injected platform flag: take the os.name == "nt" wrapper path
+        p = self.spawn("listen")
+        time.sleep(1.0)
+        self.update_copy("listen")
+        end = time.time() + 10
+        while not os.path.exists(self.marker) and time.time() < end:
+            time.sleep(0.1)
+        with open(self.marker) as f:
+            child, parent = f.read().split()[:2]
+        self.assertNotEqual(child, str(p.pid))  # a new process ...
+        self.assertEqual(parent, str(p.pid))    # ... with the old one left as the wrapper
+        self.upd("/continue")  # state (seq0) survived: the child hears the command
+        out = p.communicate(timeout=30)[0]
+        self.assertIn("Carry on", out)
+        self.assertEqual(p.returncode, 0)
+
+    def test_a_broken_new_file_is_not_executed_and_is_logged_once(self):
+        self.copy()
+        self.arm()
+        p = self.spawn("listen")
+        time.sleep(1.0)
+        with open(self.copy_path, "a") as f:
+            f.write("\ndef broken(:\n")
+        time.sleep(3.0)  # many ticks at 0.2 s
+        self.assertIsNone(p.poll(), "the old code keeps running")
+        self.assertEqual(self.logtext().count("not loadable"), 1)
+        self.upd("/continue")
+        self.assertIn("Carry on", p.communicate(timeout=30)[0])
+
+    def test_timer_restarts_into_the_new_code_and_keeps_its_deadline(self):
+        self.copy()
+        self.arm(ask="0.2")  # 12 s
+        self.hook("50,82", "Bash")
+        t0 = time.time()
+        p = self.spawn("timer")
+        time.sleep(4.0)
+        self.update_copy("timer")
+        self.assertEqual(self.wait_marker(), [str(p.pid)])
+        out = p.communicate(timeout=40)[0]
+        took = time.time() - t0
+        self.assertIn("no answer", out)
+        self.assertLess(took, 14.5, "the countdown must not restart (a restart would end near 16 s)")
+        self.assertEqual(self.sess()["phase"], "packing")
+
+    def test_wait_restarts_into_the_new_code(self):
+        self.copy()
+        self.arm()
+        self.hook("50,99", "Bash")
+        p = self.spawn("wait", fake="50,99")
+        time.sleep(1.0)
+        self.update_copy("wait")
+        self.assertEqual(self.wait_marker(), [str(p.pid)])
+        self.upd("/resume")
+        self.assertIn("resumed by the user", p.communicate(timeout=40)[0])
+
+
+for _cls in (StormTest, ButtonsTest, PhoneContinueTest, ReexecTest):  # reuse CommandTest's helpers without re-running its tests
+    for _n in dir(CommandTest):
+        if _n.startswith("test") and _n not in _cls.__dict__:
+            setattr(_cls, _n, None)
 
 
 if __name__ == "__main__":

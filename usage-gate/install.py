@@ -58,8 +58,10 @@ def main():
     os.makedirs(gdir, exist_ok=True)
     os.makedirs(sdir, exist_ok=True)
     gate = os.path.join(gdir, "gate.py")
-    shutil.copyfile(os.path.join(HERE, "gate.py"), gate)
-    shutil.copyfile(os.path.join(HERE, "skill", "SKILL.md"), os.path.join(sdir, "SKILL.md"))
+    for src, dst in ((os.path.join(HERE, "gate.py"), gate),
+                     (os.path.join(HERE, "skill", "SKILL.md"), os.path.join(sdir, "SKILL.md"))):
+        shutil.copyfile(src, dst + ".tmp")  # whole file or nothing: running loops may re-exec into gate.py
+        os.replace(dst + ".tmp", dst)
 
     cmd = {"type": "command", "command": '"%s" -I "%s" hook' % (fwd(find_python()), fwd(gate)), "timeout": 20}
     for ev in ("PreToolUse", "PostToolUse"):
