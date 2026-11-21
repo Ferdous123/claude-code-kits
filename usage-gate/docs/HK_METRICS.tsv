@@ -1,0 +1,7 @@
+time	machine	commit	boot_chars	handoff_chars	first_fails	offmap	fetched	unused_when	budget_level	coldstart	learned_ids
+2026-11-20T19:32:16Z	the-Mac	213e0a75cdae5bfa2a7a9661f12741c548c35ada	5229	3514	C6,C11	-	-	4	0	6/6	-
+2026-11-20T20:10:50Z	the-Mac	033c12f2f395254625da7212ea2e92424d8a2a57	6318	4664	-	-	-	4	0	6/6	-
+2026-11-20T21:15:53Z	the-Mac	bb8ff3784a31e073d7d16fc0e22518b205895863	7659	5984	-	-	-	4	0	6/6	-
+2026-11-21T03:51:55Z	the-Mac	03fb02cee7660568a80acec4db47afcf40722ebb	8839	6660	-	-	-	4	0	6/6	-
+2026-11-21T06:57:07Z	the-Mac	9da62224e097056f89f91543c7b66c7f9ad94617	8498	7051	-	-	-	4	0	6/6	-
+2026-11-21T11:05:30Z	the-Mac	e990f6c40c60cc6d4afd2629a2cd9bd79e7723b1	7439	7412	-	-	-	4	0	6/6	-

@@ -1,0 +1,11 @@
+{
+  "handoff": "usage-gate/docs/HANDOFF.md",
+  "context_map": "usage-gate/docs/CONTEXT_MAP.md",
+  "ledger": "usage-gate/docs/CHECKS.tsv",
+  "briefs_dir": "usage-gate/docs/briefs",
+  "decisions": "usage-gate/docs/DECISIONS.md",
+  "lessons_dir": "usage-gate/docs/lessons",
+  "metrics": "usage-gate/docs/HK_METRICS.tsv",
+  "checks": {"full": "cd usage-gate && ./check.sh"},
+  "doc_paths": ["usage-gate/docs/", "usage-gate/START_PROMPT.md", ".gitignore", "hk.json"]
+}

@@ -1,0 +1,19 @@
+time	machine	commit	dirty	label	exit	secs	log_sha	cmd	row_sha
+2026-11-20T19:28:15Z	the-Mac	2283d54fc14f35de5190be4b22ecc278d6e2958b	0	full	0	16.3	b223f3978e60	cd usage-gate && ./check.sh	9769ff53bba8
+2026-11-20T20:08:17Z	the-Mac	37f8d17bb02ae3e32f13b7b57251d94a63d6f796	0	full	0	16.1	f2705a185dba	cd usage-gate && ./check.sh	615f51d99bdf
+2026-11-20T20:24:56Z	the-Mac	9be9a512b0ed54c7940a8df6705e76f81ea505cb	0	full	0	27.0	9e456ce00448	cd usage-gate && ./check.sh	030f37e85b24
+2026-11-20T20:30:36Z	the-Mac	9be9a512b0ed54c7940a8df6705e76f81ea505cb	1	full	0	27.0	18fcc4095dea	cd usage-gate && ./check.sh	76793fec60b5
+2026-11-20T20:31:07Z	the-Mac	4b8a32af660d2fe2074d8239c43f81ad153c9f77	0	full	0	27.3	f582a62a0607	cd usage-gate && ./check.sh	ccb0c96d26c0
+2026-11-20T20:53:41Z	the-Mac	b1b0e5da572b6061756916d0a7c4052c7e2717e2	1	full	0	70.8	f176720b8910	cd usage-gate && ./check.sh	94d03651c28d
+2026-11-20T21:04:03Z	the-Mac	7d4fae480d584602777df5c68744b580453877a5	0	full	0	72.0	2b6e5714fe05	cd usage-gate && ./check.sh	23c552e625d9
+2026-11-20T21:07:05Z	the-Mac	99184f79ab6df4377ee22db9d495b30e1d14d435	0	full	0	72.3	1aacaa582903	cd usage-gate && ./check.sh	201c57ff3c66
+2026-11-20T21:12:19Z	the-Mac	51aa4aa98ddc498ce1d40e67aff5f68e732f88c3	1	full	0	72.7	ae313323f58c	cd usage-gate && ./check.sh	5680764254c6
+2026-11-20T21:13:42Z	the-Mac	8aed1cfd4c64662d38b9f46fccff9602af867723	0	full	0	73.2	225ba3354980	cd usage-gate && ./check.sh	aeac677fc9d0
+2026-11-20T22:00:22Z	the-Mac	a886b31f16c5b5c575e9666a16755cc710ea87ea	0	full	0	86.3	352807522fd1	cd usage-gate && ./check.sh	a5097edbedad
+2026-11-20T22:02:21Z	the-Mac	834ccde4a8250b7924ff0025b1949d230242710b	0	full	0	86.4	be4a86e3cabf	cd usage-gate && ./check.sh	474dd025cafe
+2026-11-21T03:41:43Z	the-Mac	464f561197357534de0fc64fd53b786e14091611	0	full	0	97.0	b02fe29639ff	cd usage-gate && ./check.sh	18e7b0f63a2e
+2026-11-21T04:44:41Z	the-Mac	aedc8e0869a62431691253082801a9d4c0c9bb70	0	full	0	96.8	80a4f9a272c9	cd usage-gate && ./check.sh	9cdd24d4fbe0
+2026-11-21T05:22:30Z	the-Mac	5e534f860580ca4cccb21f735f73af382a453c7b	0	full	0	118.7	aeee752558fb	cd usage-gate && ./check.sh	6fdbe0c658a2
+2026-11-21T06:51:47Z	the-Mac	dd14bc4b152b13993b57b0a82a71359b7b637ac7	0	full	0	204.2	12d93fc550ca	cd usage-gate && ./check.sh	110091116d75
+2026-11-21T06:55:11Z	the-Mac	e3f7dcc7fdffbc006034ed0869abf4684f62e40b	0	full	0	184.7	bdeda462561a	cd usage-gate && ./check.sh	7faaa9a707e2
+2026-11-21T11:02:54Z	the-Mac	5546395af4409897679bf781a54ad27f97c29953	0	full	0	242.5	50d2d6f7f52d	cd usage-gate && ./check.sh	727b7c1653b4

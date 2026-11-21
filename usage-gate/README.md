@@ -1,5 +1,7 @@
 # usage-gate
 
+Development happens in this folder of claude-code-kits; working notes (handoff, decisions, briefs) are in docs/.
+
 A Claude Code skill and hook that stop a session cleanly before it hits the plan's 5-hour or weekly limit, then let it carry on by itself after the reset. Watching costs no tokens: a hook reads your account's usage figures and blocks tool calls only when a threshold is crossed. Optional Telegram alerts and phone commands.
 
 Status: used daily on macOS (Claude Code desktop app and the VS Code extension). Linux (incl. ARM64) and Windows are supported through the VS Code extension: with no keychain the login is read from `~/.claude/.credentials.json`, read-only (the gate never refreshes it), and the commands use `python` on Windows, `python3` elsewhere. Not yet verified live on those machines.
