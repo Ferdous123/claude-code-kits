@@ -1636,6 +1636,18 @@ class TestRound3(HookCase):
         self.p.write("docs/guide.md", GUIDE + "changed\n")
         self.assertFails("C1")
 
+    def test_r10_sparse_checkout_excluded_files_are_not_dirty(self):
+        """10: files a sparse checkout leaves out (skip-worktree, absent on disk) are not changes."""
+        self.p.write("big/a.bin", "x\n")
+        self.p.write("big/b.bin", "y\n")
+        self.p.commit_push("big files")
+        self.p.git("sparse-checkout", "set", "--no-cone", "/*", "!/big/")
+        self.assertFalse(os.path.exists(self.p.path("big/a.bin")))
+        code, out = self.p.check()
+        self.assertNotIn("FAIL C1 ", out)
+        code, out, _ = self.p.hk("run", "x", "--", *OK_CMD)
+        self.assertIn("dirty=0", out)
+
     def test_r10_untracked_hidden_by_config_still_counts(self):
         """10: status.showUntrackedFiles=no does not hide an untracked file from C1."""
         self.p.git("config", "status.showUntrackedFiles", "no")

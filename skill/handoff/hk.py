@@ -374,7 +374,11 @@ def status_count(path):
     count = len(git_lines(path, ["status", "--porcelain", "--untracked-files=all"]))
     for line in git_lines(path, ["ls-files", "-v"]):
         flag = line[:1]
-        if flag == "S" or flag.islower():
+        if flag.islower():
+            count += 1
+        elif flag == "S" and os.path.lexists(os.path.join(path, line[2:])):
+            # skip-worktree on a file that is present hides a local change; a sparse checkout
+            # marks the files it leaves out the same way, and those are absent, so not changes
             count += 1
     return count
 
