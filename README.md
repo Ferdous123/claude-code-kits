@@ -2,11 +2,13 @@
 
 Skills and tools for working with Claude Code. Each kit stands alone.
 
-| Kit | What it does |
-|---|---|
-| [handoff](#handoff) | End-of-session handoffs a fresh session on any machine continues from, checked by `hk.py` |
-| [usage-gate](usage-gate/README.md) | Stops sessions cleanly near the 5-hour or weekly plan limit and resumes after the reset; optional Telegram alerts and phone commands |
-| [research-workflow](research-workflow/README.md) | Evidence-first research workflow from plain files: papers become located evidence cards, gaps carry a scope line, methods are assembled as cited hypotheses; checks by script, local models only after a measured test |
+| Kit | What it does | Needs |
+|---|---|---|
+| [handoff](#handoff) | End-of-session handoffs a fresh session on any machine continues from, checked by `hk.py` | Python 3.8+, git |
+| [usage-gate](usage-gate/README.md) | Stops sessions cleanly near the 5-hour or weekly plan limit and resumes after the reset; optional Telegram alerts and phone commands | Python 3, a Claude Code login |
+| [research-workflow](research-workflow/README.md) | Evidence-first research workflow from plain files: papers become located evidence cards, gaps carry a scope line, methods are assembled as cited hypotheses; checks by script, local models only after a measured test | Python 3.8+; optional PyMuPDF (for PDFs) and a local model runner |
+
+Layout: the handoff kit sits at the repository root (`skill/handoff/`, `docs/SPEC.md`, `tests/`); `usage-gate/` and `research-workflow/` are self-contained folders, each with its own README. `hk.json` at the root configures `hk` for the working notes in `usage-gate/docs/`; no kit needs it to be installed. Every kit is installed by copying or running files from this repository; nothing is published as a package.
 
 ## handoff
 
@@ -23,6 +25,10 @@ A Claude Code skill for end-of-session handoffs, plus one Python tool, `hk.py`.
 Copy the `skill/handoff` folder to `~/.claude/skills/handoff/` (all projects) or to
 `<your project>/.claude/skills/handoff/` (one project). `hk` runs from anywhere
 inside a git repository: `python3 <skill folder>/hk.py <command>`.
+
+### Use
+
+At the end of a working session, type `/handoff` (or say "handoff now" or "make handoff"). The skill settles unfinished work, writes `docs/HANDOFF.md`, runs `hk check`, and pushes. The first time in a project, and only with the owner's agreement, it also creates `hk.json`, adds `.hk/` to `.gitignore`, and adds the two hooks described in `skill/handoff/FORMAT.md` to `.claude/settings.json`. A later session starts with `hk boot`.
 
 ### Commands
 
@@ -50,7 +56,7 @@ Details are in [docs/SPEC.md](docs/SPEC.md); file formats are in `skill/handoff/
 
 ### Tests
 
-From the repository root (takes a few minutes):
+From the repository root (about 1.5 minutes on Linux):
 
     python3 -m unittest discover -s tests
 
@@ -60,10 +66,10 @@ Python 3.8 or newer (standard library only) and git.
 
 ### Status
 
-- 169 tests pass on macOS with Python 3.15.
+- All 187 tests in `tests/test_hk.py` pass on Linux with Python 3.12. An earlier version of this section recorded a pass on macOS; that run was not repeated.
 - Not tested on Windows.
 - The hooks have not yet been tried in a live session.
 
 ## License
 
-MIT. See `LICENSE`.
+MIT, for the whole repository. See `LICENSE`.
