@@ -1,0 +1,114 @@
+{
+  "type": "object",
+  "description": "One line of conjectures/conjectures.jsonl: the researcher's own idea",
+  "additionalProperties": false,
+  "properties": {
+    "conjecture_id": {
+      "type": "string",
+      "description": "J0001 style id"
+    },
+    "researcher_words": {
+      "type": "string",
+      "description": "The idea exactly as the researcher wrote it. The record of the jump."
+    },
+    "premises": {
+      "type": "array",
+      "description": "Premises as restated and confirmed",
+      "items": {
+        "type": "string",
+        "description": "premise"
+      }
+    },
+    "claim": {
+      "type": "string",
+      "description": "The claim as restated"
+    },
+    "restated_confirmed": {
+      "type": "boolean",
+      "description": "True once the researcher confirmed the restatement"
+    },
+    "consequences": {
+      "type": "array",
+      "description": "What must hold if it is true",
+      "items": {
+        "type": "object",
+        "description": "One consequence",
+        "additionalProperties": true,
+        "properties": {
+          "statement": {
+            "type": "string",
+            "description": "Consequence"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "supported",
+              "contradicted",
+              "untested"
+            ],
+            "description": "Against the corpus"
+          },
+          "card_ids": {
+            "type": "array",
+            "description": "Located cards",
+            "items": {
+              "type": "string",
+              "description": "card id"
+            }
+          }
+        },
+        "required": [
+          "statement",
+          "status",
+          "card_ids"
+        ]
+      }
+    },
+    "evidence_against_card_ids": {
+      "type": "array",
+      "description": "Strongest evidence against",
+      "items": {
+        "type": "string",
+        "description": "card id"
+      }
+    },
+    "generated_hypotheses": {
+      "type": "array",
+      "description": "Anything the model proposed beyond the researcher's premises; lowest standing",
+      "items": {
+        "type": "string",
+        "description": "hypothesis text"
+      }
+    },
+    "cheapest_test": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Smallest experiment or analysis whose outcome would differ"
+    },
+    "dossier_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Dossier opened for it"
+    },
+    "created": {
+      "type": "string",
+      "description": "Date",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    }
+  },
+  "required": [
+    "conjecture_id",
+    "researcher_words",
+    "premises",
+    "claim",
+    "restated_confirmed",
+    "consequences",
+    "created"
+  ],
+  "$id": "conjecture",
+  "title": "conjecture"
+}

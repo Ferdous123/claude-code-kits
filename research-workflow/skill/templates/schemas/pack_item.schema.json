@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "description": "One line of packs/<id>/items.jsonl: one test input",
+  "additionalProperties": false,
+  "properties": {
+    "item_id": {
+      "type": "string",
+      "description": "Item id"
+    },
+    "input": {
+      "type": "object",
+      "description": "Input; fields depend on the role (see SKILL.md (local-model policy))",
+      "additionalProperties": true
+    }
+  },
+  "required": [
+    "item_id",
+    "input"
+  ],
+  "$id": "pack_item",
+  "title": "pack_item"
+}

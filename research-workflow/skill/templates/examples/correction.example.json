@@ -1,0 +1,15 @@
+{
+  "correction_id": "X0001",
+  "card_id": "C0004",
+  "from_version": 1,
+  "to_version": 2,
+  "field": "value",
+  "before": "0.28",
+  "after": "0.82",
+  "source_page": 3,
+  "source_quote": "an RMSE of 0.82 m/s",
+  "by": "the researcher",
+  "words": "digits swapped",
+  "date": "2026-11-18",
+  "disputed": false
+}

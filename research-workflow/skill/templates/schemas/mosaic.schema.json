@@ -1,0 +1,178 @@
+{
+  "type": "object",
+  "description": "mosaics/M0001.json: a method assembled from steps of different papers. A hypothesis to test, never a result.",
+  "additionalProperties": false,
+  "properties": {
+    "mosaic_id": {
+      "type": "string",
+      "description": "M0001 style id"
+    },
+    "goal": {
+      "type": "string",
+      "description": "What the assembled method should do"
+    },
+    "label": {
+      "type": "string",
+      "enum": [
+        "hypothesis"
+      ],
+      "description": "Always hypothesis"
+    },
+    "steps": {
+      "type": "array",
+      "description": "Ordered steps. Unknown fields are the text 'not stated', never guessed.",
+      "items": {
+        "type": "object",
+        "description": "One step",
+        "additionalProperties": true,
+        "properties": {
+          "order": {
+            "type": "integer",
+            "description": "Position from 1",
+            "minimum": 1
+          },
+          "step_card_id": {
+            "type": "string",
+            "description": "Method-step card"
+          },
+          "takes_in": {
+            "type": "string",
+            "description": "Input type, or 'not stated'"
+          },
+          "produces": {
+            "type": "string",
+            "description": "Output type, or 'not stated'"
+          },
+          "assumes": {
+            "type": "string",
+            "description": "Assumptions, or 'not stated'"
+          },
+          "setting_measured_in": {
+            "type": "string",
+            "description": "Setting where its reported performance was measured, or 'not stated'"
+          }
+        },
+        "required": [
+          "order",
+          "step_card_id",
+          "takes_in",
+          "produces",
+          "assumes",
+          "setting_measured_in"
+        ]
+      }
+    },
+    "links": {
+      "type": "array",
+      "description": "One per adjacent pair",
+      "items": {
+        "type": "object",
+        "description": "One link",
+        "additionalProperties": true,
+        "properties": {
+          "from_order": {
+            "type": "integer",
+            "description": "order of the first step",
+            "minimum": 1
+          },
+          "to_order": {
+            "type": "integer",
+            "description": "order of the second step",
+            "minimum": 1
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "unknown",
+              "interface_compatible",
+              "assumption_compatible",
+              "smoke_tested",
+              "empirically_tested"
+            ],
+            "description": "Compatibility state"
+          },
+          "stated_fields_first": {
+            "type": "integer",
+            "description": "How many of the first step's 4 fields are stated",
+            "minimum": 0,
+            "maximum": 4
+          },
+          "stated_fields_second": {
+            "type": "integer",
+            "description": "How many of the second step's 4 fields are stated",
+            "minimum": 0,
+            "maximum": 4
+          },
+          "evidence": {
+            "type": "string",
+            "description": "Card ids or the researcher's recorded test, or empty"
+          }
+        },
+        "required": [
+          "from_order",
+          "to_order",
+          "state",
+          "stated_fields_first",
+          "stated_fields_second"
+        ]
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "description": "Assumption conflicts across non-adjacent steps, regime mismatches, circular dependencies, missing steps",
+      "items": {
+        "type": "string",
+        "description": "warning"
+      }
+    },
+    "feasibility": {
+      "type": "object",
+      "description": "Researcher's short assessment",
+      "additionalProperties": true,
+      "properties": {
+        "data": {
+          "type": "string",
+          "description": "data needed"
+        },
+        "compute": {
+          "type": "string",
+          "description": "compute needed"
+        },
+        "licences": {
+          "type": "string",
+          "description": "licences"
+        },
+        "skills": {
+          "type": "string",
+          "description": "skills"
+        },
+        "main_risk": {
+          "type": "string",
+          "description": "main risk"
+        }
+      }
+    },
+    "blueprint_frozen_hash": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Hash of the experiment plan once frozen; no predicted score is ever shown"
+    },
+    "created": {
+      "type": "string",
+      "description": "Date",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    }
+  },
+  "required": [
+    "mosaic_id",
+    "goal",
+    "label",
+    "steps",
+    "links",
+    "created"
+  ],
+  "$id": "mosaic",
+  "title": "mosaic"
+}

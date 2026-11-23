@@ -1,0 +1,49 @@
+{
+  "_readme": "Candidate local models per role. YOU MAY EDIT THIS FILE (add, remove or change entries). It is a list of models worth TESTING, not a recommendation: a model gets a role only after it passes that role's test pack on this machine (see SKILL.md (local-model policy)). Sizes are download sizes as shown on the runner's library pages on the date below; the library pages did not show a licence for most entries, so licence is marked 'check' where it was not seen. If this list is out of date, nothing breaks: the bake-off is the judge, and a model that is gone or too big simply fails or does not fit.",
+  "list_checked_on": "2026-11-18",
+  "list_checked_how": "Ollama library pages fetched on that date (ollama.com/library and the pages of each model named below). Relative update dates only were shown; no exact release dates.",
+  "runner": {
+    "name": "ollama",
+    "why": "Installs for the current user without administrator rights on Windows (the installer puts it in the user's home folder; models go to the user's .ollama folder, movable with the OLLAMA_MODELS variable). Local API at http://localhost:11434, JSON-schema constrained output, embeddings. Needs an NVIDIA driver of version 551.61 or newer on Windows to use an NVIDIA GPU (from the runner's Windows page, checked 2026-11-18).",
+    "windows": "Download OllamaSetup.exe from ollama.com/download and run it as the normal user. No administrator prompt is expected.",
+    "macos": "Download Ollama.dmg, drag the app to Applications, start it once. It may ask to create a link in /usr/local/bin (that asks for administrator approval). macOS 14 or newer. Apple silicon uses the GPU; Intel Macs run on the CPU only.",
+    "linux": "The official install script and the manual package both need sudo. Without administrator rights this skill's local-model features are not available through the supported route: Claude does those roles instead. (A home-folder install was not tested.)",
+    "how_the_skill_checks": "detect_machine.py asks the local server for its version (GET /api/version) and its installed models (GET /api/tags), and falls back to running `ollama --version` and `ollama list`. A model counts as present only if the runner lists it."
+  },
+  "families": {
+    "qwen": "Alibaba Qwen models", "gemma": "Google Gemma models", "llama": "Meta Llama models"
+  },
+  "candidates": {
+    "extract": [
+      {"id": "qwen3.5:4b", "family": "qwen", "params_b": 4.2, "size_gb": 4.0, "quant": "Q4_K_M", "context_listed": "256K", "licence": "Apache-2.0 (licence text seen on the model page)", "licence_seen": true, "source": "https://ollama.com/library/qwen3.5", "note": "File 3.3 GB plus a 0.7 GB vision part. Tagged thinking: the skill switches thinking off. First choice to test at 6 GB."},
+      {"id": "gemma3:4b", "family": "gemma", "params_b": 4.0, "size_gb": 3.4, "quant": "not shown", "context_listed": "128K", "licence": "Gemma Terms of Use (linked from the page)", "licence_seen": true, "source": "https://ollama.com/library/gemma3", "note": "Different family from qwen: use as the second independent pass."},
+      {"id": "qwen3:4b", "family": "qwen", "params_b": 4.0, "size_gb": 2.5, "quant": "not shown", "context_listed": "256K", "licence": "check", "licence_seen": false, "source": "https://ollama.com/library/qwen3", "note": "Older Qwen generation; same family as qwen3.5, so not a second independent family."},
+      {"id": "llama3.2:3b", "family": "llama", "params_b": 3.2, "size_gb": 2.0, "quant": "not shown", "context_listed": "128K", "licence": "check (Meta Llama community licence expected)", "licence_seen": false, "source": "https://ollama.com/library/llama3.2", "note": "Third family. Older; expect weaker extraction."},
+      {"id": "qwen3:8b", "family": "qwen", "params_b": 8.2, "size_gb": 5.2, "quant": "not shown", "context_listed": "40K", "licence": "check", "licence_seen": false, "source": "https://ollama.com/library/qwen3", "note": "Larger than a 6 GB card holds comfortably: runs partly on the CPU and slower. Try only if the 4B models fail."},
+      {"id": "qwen3.5:9b", "family": "qwen", "params_b": 9.0, "size_gb": 7.6, "quant": "not shown", "context_listed": "256K", "licence": "check", "licence_seen": false, "source": "https://ollama.com/library/qwen3.5", "note": "Listed 6.6 to 7.6 GB. Partial offload on 6 GB cards."},
+      {"id": "gemma4:e2b", "family": "gemma", "params_b": null, "size_gb": 7.5, "quant": "not shown", "context_listed": "128K", "licence": "check (Gemma terms)", "licence_seen": false, "source": "https://ollama.com/library/gemma4", "note": "Listed 4.6 to 7.5 GB depending on the build. Parameter count not shown on the page."},
+      {"id": "gemma4:e4b", "family": "gemma", "params_b": null, "size_gb": 9.5, "quant": "not shown", "context_listed": "128K", "licence": "check (Gemma terms)", "licence_seen": false, "source": "https://ollama.com/library/gemma4", "note": "Listed 6.6 to 9.5 GB. For cards with 10 GB or more."},
+      {"id": "qwen3.5:2b", "family": "qwen", "params_b": 2.0, "size_gb": 3.1, "quant": "not shown", "context_listed": "256K", "licence": "check", "licence_seen": false, "source": "https://ollama.com/library/qwen3.5", "cpu_fallback": true, "note": "CPU-only fallback. Expect to fail the extract pack; navigation notes may be possible."},
+      {"id": "gemma3:1b", "family": "gemma", "params_b": 1.0, "size_gb": 0.8, "quant": "not shown", "context_listed": "32K", "licence": "Gemma Terms of Use", "licence_seen": true, "source": "https://ollama.com/library/gemma3", "cpu_fallback": true, "note": "CPU-only fallback. Very small; probably fails every pack except navigation."},
+      {"id": "qwen3:1.7b", "family": "qwen", "params_b": 1.7, "size_gb": 1.4, "quant": "not shown", "context_listed": "40K", "licence": "check", "licence_seen": false, "source": "https://ollama.com/library/qwen3", "cpu_fallback": true, "note": "CPU-only fallback."},
+      {"id": "llama3.2:1b", "family": "llama", "params_b": 1.2, "size_gb": 1.3, "quant": "not shown", "context_listed": "128K", "licence": "check", "licence_seen": false, "source": "https://ollama.com/library/llama3.2", "cpu_fallback": true, "note": "CPU-only fallback."}
+    ],
+    "judge_support": "same_as:extract",
+    "navsum": "same_as:extract",
+    "embed": [
+      {"id": "qwen3-embedding:0.6b", "family": "qwen", "params_b": 0.6, "size_gb": 0.64, "quant": "not shown", "context_listed": "32K", "licence": "check", "licence_seen": false, "source": "https://ollama.com/library/qwen3-embedding", "note": "Small and multilingual; also available as 4b (2.5 GB) and 8b (4.7 GB)."},
+      {"id": "bge-m3", "family": "bge", "params_b": 0.567, "size_gb": 1.2, "quant": "not shown", "context_listed": "8K", "licence": "check", "licence_seen": false, "source": "https://ollama.com/library/bge-m3", "note": "Long inputs (8K). Older (2 years on the page)."},
+      {"id": "embeddinggemma:300m", "family": "gemma", "params_b": 0.3, "size_gb": 0.62, "quant": "not shown", "context_listed": "2K", "licence": "check (Gemma terms)", "licence_seen": false, "source": "https://ollama.com/library/embeddinggemma", "note": "Short input window (2K)."},
+      {"id": "nomic-embed-text", "family": "nomic", "params_b": null, "size_gb": 0.27, "quant": "fp16", "context_listed": "2K", "licence": "check", "licence_seen": false, "source": "https://ollama.com/library/nomic-embed-text", "note": "Tiny and popular; 2K window. Good CPU fallback."},
+      {"id": "mxbai-embed-large", "family": "mxbai", "params_b": 0.335, "size_gb": null, "quant": "not shown", "context_listed": "not checked", "licence": "check", "licence_seen": false, "source": "https://ollama.com/library/mxbai-embed-large", "note": "Size on disk was not checked on the list date; the bake-off will show."},
+      {"id": "all-minilm", "family": "minilm", "params_b": 0.033, "size_gb": null, "quant": "not shown", "context_listed": "not checked", "licence": "check", "licence_seen": false, "source": "https://ollama.com/library/all-minilm", "cpu_fallback": true, "note": "Smallest option (22M or 33M parameters). CPU fallback."}
+    ],
+    "rerank": [
+      {"id": "none-bm25-fusion", "family": "none", "params_b": 0, "size_gb": 0, "quant": "n/a", "context_listed": "n/a", "licence": "n/a (the skill's own scripts)", "licence_seen": true, "source": "scripts/search.py", "note": "Default: keyword ranking, fused with embedding ranking when an embed model is qualified. No model needed."},
+      {"id": "pointwise:<a model from the extract pool>", "family": "same as the model used", "params_b": null, "size_gb": 0, "quant": "n/a", "context_listed": "n/a", "licence": "that of the model", "licence_seen": false, "source": "scripts/bakeoff.py (rerank pack)", "note": "The runner's library showed no reranker model on 2026-11-18 (only community uploads, which the shipped scripts cannot call). Option: a small generative model scores each passage 0 to 3 for relevance. Optional; test against the baseline."}
+    ]
+  },
+  "not_attempted_on_small_machines": [
+    {"what": "Vision and OCR models (reading scanned pages and figures)", "seen_on_library": "glm-ocr, qwen3-vl (2b, 4b, 8b ...), qwen3.5 (reads images), gemma3/gemma4 (images)", "why": "Image input needs extra memory beyond the text weights, and OCR output needs the two-reader check, which is not affordable on a 6 GB card. Scanned papers are marked scanned_no_text and need a text version or a person."}
+  ]
+}

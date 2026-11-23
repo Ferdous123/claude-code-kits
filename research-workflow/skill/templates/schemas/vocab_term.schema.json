@@ -1,0 +1,104 @@
+{
+  "type": "object",
+  "description": "One line of vocab/vocabulary.jsonl: a canonical term and the wordings mapped to it",
+  "additionalProperties": false,
+  "properties": {
+    "term_id": {
+      "type": "string",
+      "description": "T0001 style id"
+    },
+    "canonical": {
+      "type": "string",
+      "description": "Canonical term"
+    },
+    "dimension": {
+      "type": "string",
+      "enum": [
+        "problem",
+        "method",
+        "dataset",
+        "context",
+        "metric",
+        "year"
+      ],
+      "description": "Matrix dimension"
+    },
+    "synonyms": {
+      "type": "array",
+      "description": "Other wordings",
+      "items": {
+        "type": "string",
+        "description": "wording"
+      }
+    },
+    "mapped_wordings": {
+      "type": "array",
+      "description": "Each mapping keeps the source wording",
+      "items": {
+        "type": "object",
+        "description": "One mapping",
+        "additionalProperties": true,
+        "properties": {
+          "paper_id": {
+            "type": "string",
+            "description": "paper"
+          },
+          "wording": {
+            "type": "string",
+            "description": "wording as printed"
+          },
+          "card_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "card"
+          }
+        },
+        "required": [
+          "paper_id",
+          "wording"
+        ]
+      }
+    },
+    "version": {
+      "type": "integer",
+      "description": "Vocabulary version in which this line was written",
+      "minimum": 0
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "proposed",
+        "accepted",
+        "merged",
+        "split",
+        "retired"
+      ],
+      "description": "State"
+    },
+    "decided_by": {
+      "type": "string",
+      "enum": [
+        "pending",
+        "researcher"
+      ],
+      "description": "Who accepted it"
+    },
+    "note": {
+      "type": "string",
+      "description": "Note, e.g. same name but different computation"
+    }
+  },
+  "required": [
+    "term_id",
+    "canonical",
+    "dimension",
+    "synonyms",
+    "version",
+    "state",
+    "decided_by"
+  ],
+  "$id": "vocab_term",
+  "title": "vocab_term"
+}

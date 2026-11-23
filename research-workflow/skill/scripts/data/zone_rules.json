@@ -1,0 +1,16 @@
+{
+  "_note": "Which document zones each card type may be drawn from (the zone_valid check). Edit only with a DECISIONS.md row. 'heading' counts as 'body'. A bibliography zone is never allowed. A related_work zone is never allowed for a card whose attribution is 'own'.",
+  "allowed": {
+    "claim": ["abstract", "body", "caption", "appendix"],
+    "result": ["abstract", "body", "caption", "appendix"],
+    "method_step": ["body", "appendix"],
+    "dataset": ["abstract", "body", "caption", "appendix"],
+    "assumption": ["abstract", "body", "appendix"],
+    "limitation": ["abstract", "body", "appendix"],
+    "definition": ["body", "appendix"],
+    "future_work": ["abstract", "body"],
+    "attributed_opinion": ["abstract", "body", "related_work", "appendix"]
+  },
+  "cited_work_may_use_related_work": true,
+  "restrictiveness_order": ["bibliography", "related_work", "title_block", "footnote", "unknown", "caption", "appendix", "abstract", "heading", "body"]
+}

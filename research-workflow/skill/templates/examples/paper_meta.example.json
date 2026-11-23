@@ -1,0 +1,15 @@
+{
+  "paper_id": "P0001",
+  "pages": 11,
+  "backend": "pymupdf",
+  "parser_version": "1.24.0",
+  "total_chars": 41233,
+  "low_text_pages": [
+    7
+  ],
+  "text_layer": "ok",
+  "eof_marker": true,
+  "suspect_text_pages": [],
+  "title_check": "found",
+  "parsed_on": "2026-11-18T10:05:00+06:00"
+}

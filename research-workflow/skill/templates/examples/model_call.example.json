@@ -1,0 +1,20 @@
+{
+  "call_id": "MC000001",
+  "date": "2026-11-18T10:15:00+06:00",
+  "role": "extract",
+  "model": "qwen3.5:4b",
+  "run_id": "R0001",
+  "input_ref": "P0001 page 3 sha=2222",
+  "prompt_sha256": "4444444444444444444444444444444444444444444444444444444444444444",
+  "params": {
+    "temperature": 0,
+    "num_ctx": 4096,
+    "think": false
+  },
+  "output_raw": "{\"cards\": []}",
+  "parse_status": "ok",
+  "finish_reason": "stop",
+  "tokens_in": 1200,
+  "tokens_out": 150,
+  "seconds": 11.2
+}

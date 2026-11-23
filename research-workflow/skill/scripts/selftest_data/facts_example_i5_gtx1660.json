@@ -1,0 +1,137 @@
+{
+  "_note": "EXAMPLE ONLY: facts written by hand to show the plan for a typical i5 (10th generation), 16 GB RAM, GTX 1660 6 GB PC. Not detected from any real machine.",
+  "detected_on": "2026-11-18T12:00:00+06:00",
+  "facts": {
+    "os_name": {
+      "value": "Windows 11",
+      "how": "assumed for illustration (not detected)",
+      "status": "ok"
+    },
+    "os_version": {
+      "value": "10.0.22631",
+      "how": "assumed for illustration (not detected)",
+      "status": "ok"
+    },
+    "arch": {
+      "value": "AMD64",
+      "how": "assumed for illustration (not detected)",
+      "status": "ok"
+    },
+    "cpu_model": {
+      "value": "Intel(R) Core(TM) i5-10400 CPU @ 2.90GHz",
+      "how": "assumed for illustration (not detected)",
+      "status": "ok"
+    },
+    "cpu_cores_physical": {
+      "value": 6,
+      "how": "assumed for illustration (not detected)",
+      "status": "ok"
+    },
+    "cpu_threads": {
+      "value": 12,
+      "how": "assumed for illustration (not detected)",
+      "status": "ok"
+    },
+    "ram_gb": {
+      "value": 16.0,
+      "how": "assumed for illustration (not detected)",
+      "status": "ok"
+    },
+    "gpu_name": {
+      "value": "NVIDIA GeForce GTX 1660",
+      "how": "assumed for illustration (not detected)",
+      "status": "ok"
+    },
+    "gpu_vendor": {
+      "value": "nvidia",
+      "how": "assumed for illustration (not detected)",
+      "status": "ok"
+    },
+    "gpu_vram_gb": {
+      "value": 6.0,
+      "how": "assumed for illustration (not detected)",
+      "status": "ok"
+    },
+    "gpu_driver": {
+      "value": "560.94",
+      "how": "assumed for illustration (not detected)",
+      "status": "ok"
+    },
+    "gpu_cuda": {
+      "value": "12.6",
+      "how": "assumed for illustration (not detected)",
+      "status": "ok"
+    },
+    "gpu_compute_cap": {
+      "value": "7.5",
+      "how": "assumed for illustration (not detected)",
+      "status": "ok"
+    },
+    "free_disk_gb": {
+      "value": 180.0,
+      "how": "assumed for illustration (not detected)",
+      "status": "ok"
+    },
+    "python_version": {
+      "value": "3.11.9",
+      "how": "assumed for illustration (not detected)",
+      "status": "ok"
+    },
+    "python_venv_ok": {
+      "value": true,
+      "how": "assumed for illustration (not detected)",
+      "status": "ok"
+    },
+    "pymupdf_ok": {
+      "value": false,
+      "how": "assumed for illustration (not detected)",
+      "status": "ok"
+    },
+    "runner_name": {
+      "value": "none",
+      "how": "assumed for illustration (not detected)",
+      "status": "ok"
+    },
+    "runner_path": {
+      "value": "none",
+      "how": "assumed for illustration (not detected)",
+      "status": "ok"
+    },
+    "runner_version": {
+      "value": "none",
+      "how": "assumed for illustration (not detected)",
+      "status": "ok"
+    },
+    "runner_running": {
+      "value": false,
+      "how": "assumed for illustration (not detected)",
+      "status": "ok"
+    },
+    "runner_models": {
+      "value": [],
+      "how": "assumed for illustration (not detected)",
+      "status": "ok"
+    },
+    "other_runners": {
+      "value": [],
+      "how": "assumed for illustration (not detected)",
+      "status": "ok"
+    },
+    "net_pypi": {
+      "value": true,
+      "how": "assumed for illustration (not detected)",
+      "status": "ok"
+    },
+    "net_ollama": {
+      "value": true,
+      "how": "assumed for illustration (not detected)",
+      "status": "ok"
+    },
+    "net_anthropic": {
+      "value": true,
+      "how": "assumed for illustration (not detected)",
+      "status": "ok"
+    }
+  },
+  "fingerprint": "example"
+}

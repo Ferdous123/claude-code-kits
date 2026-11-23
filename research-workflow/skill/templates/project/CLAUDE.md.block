@@ -1,0 +1,40 @@
+<!-- research-workflow:begin -->
+# Research rules for this project (evidence-first workflow)
+
+Skill: `research-workflow`, installed at `{{skill_dir}}`. If it is not available, tell the user before doing anything else.
+Project folder: this folder. State lives in files here, never in the conversation.
+
+## Start of every session
+1. Read `HANDOFF.md` and nothing else. Go deeper only by the pointers it gives (card id, page, file and line range).
+2. Run `{{python}} "{{scripts}}/detect_machine.py" --check` (one line of output). If it says "changed", re-plan before doing heavy work. (Every script is run as `{{python}} "{{scripts}}/NAME.py" ARGS`; each has `--help`.)
+3. State in one line: phase, next step, budget for this session. Then work.
+
+## Hard rules (the workflow refuses these, whoever asks, unless the user changes the rule in DECISIONS.md)
+- Cite only an evidence card whose `located` check is `passed` (and `zone_valid` passed). The card's quoted text must be on the stated page. No locator, not citable, whoever wrote the card.
+- A machine check is never called "verified". Checks are named `located`, `zone_valid`, `supported`, `consistent`, `cross_read`. Only the user, in this conversation, can make a card `human_verified`.
+- "Not stated" is a valid value. Never fill in a value the paper does not state. Never guess a missing field.
+- Never call something novel, new, first, unexplored, overlooked or a "research gap". Say "not found in the reviewed corpus" and give the scope line (snapshot, vocabulary version, searches, date, unread papers).
+- Every number carries its test pack and denominator ("20 of 24 on pack screen-support v1"). No pack and denominator, no number.
+- Work status uses five words only: written, passes-with-stub, ran-on-real-model, measured, operator-inspected, each tied to a file. Never say "done", "finished", "shipped" or "production-ready" without the file that shows it.
+- The user's correction beats any model output at once, and becomes a regression case.
+- Never send paper text to Claude when `project.json` says `local_only` or `undecided`. Ask first.
+- Never accept a local model's output unchecked. Local output is a proposal until the deterministic checks pass.
+- Write only inside this project folder. Never delete a file; ask first and name it.
+- A check that examined nothing (0 files, 0 cards) is "not run", never clean; every check states its denominator.
+- A formula or symbol read from a text layer is not evidence until a person compared it with the page image; a borrowed quantity is checked for what it is (update or gradient, units), not only for how it is written.
+- Delegated workers write to private files, write incrementally, end with a closing line; the orchestrator checks their output against the input itself.
+- Bibliographic details come from the file's first page, a registry result you were shown, or the user; never from memory.
+
+## Budget rules
+- Read cards and pages by id with `show.py`, never whole papers. Use `search.py` to find them.
+- Scripts and local models do bulk work. Claude reads: adjudication queues (max 20 items per message), sampled audits, and gate summaries.
+- Reports use the fixed formats in the skill's `SKILL.md (session protocol)`. No prose recaps of files.
+- Stop and write the handoff when the session budget in HANDOFF.md is spent, or after any phase gate.
+
+## Triggers
+`rw start`, `rw status`, `rw machine`, `rw gate`, `rw handoff`, `rw check`, and the phase words: `rw frame`, `rw collect`, `rw roles`, `rw read`, `rw ask`, `rw map`, `rw challenge`, `rw compose`, `rw write`.
+Each loads the matching phase from `{{skill_dir}}/SKILL.md` (phase table).
+
+## Files (what is where)
+`MACHINE.md` machine facts and plan; `roles.json` which model holds which role; `corpus/` papers and register; `parsed/` pages; `cards/` evidence cards; `checks/` check results; `map/` coverage and ledgers; `gaps/`, `conjectures/`, `dossiers/`, `mosaics/`, `drafts/`; `corrections/`, `regression/`; `packs/`, `evals/`; `DECISIONS.md`, `SESSION_LOG.md`, `LESSONS.md`, `HANDOFF.md`.
+<!-- research-workflow:end -->

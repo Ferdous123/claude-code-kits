@@ -1,0 +1,55 @@
+{
+  "type": "object",
+  "description": "One line of status/status.jsonl: work status tied to an artefact",
+  "additionalProperties": false,
+  "properties": {
+    "status_id": {
+      "type": "string",
+      "description": "ST0001 style id"
+    },
+    "item": {
+      "type": "string",
+      "description": "What the status is about"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "written",
+        "passes-with-stub",
+        "ran-on-real-model",
+        "measured",
+        "operator-inspected"
+      ],
+      "description": "The only five words allowed"
+    },
+    "artefact": {
+      "type": "string",
+      "description": "Path inside the project, or run id in evals/results.jsonl for measured"
+    },
+    "date": {
+      "type": "string",
+      "description": "Date",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "inspected_by": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "For operator-inspected: the person"
+    },
+    "note": {
+      "type": "string",
+      "description": "Note"
+    }
+  },
+  "required": [
+    "status_id",
+    "item",
+    "status",
+    "artefact",
+    "date"
+  ],
+  "$id": "status",
+  "title": "status"
+}

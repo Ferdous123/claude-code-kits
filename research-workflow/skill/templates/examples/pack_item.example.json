@@ -1,0 +1,8 @@
+{
+  "item_id": "s001",
+  "input": {
+    "statement": "The model reached an RMSE of 0.82 m/s.",
+    "quote": "The model reached an RMSE of 0.82 m/s on the test set.",
+    "context": ""
+  }
+}

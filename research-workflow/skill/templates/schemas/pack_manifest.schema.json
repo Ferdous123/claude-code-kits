@@ -1,0 +1,146 @@
+{
+  "type": "object",
+  "description": "packs/<pack_id>/pack.json: a small fixed set of test inputs with known answers",
+  "additionalProperties": false,
+  "properties": {
+    "pack_id": {
+      "type": "string",
+      "description": "Pack id",
+      "pattern": "^[a-z0-9][a-z0-9_-]{1,50}$"
+    },
+    "version": {
+      "type": "string",
+      "description": "Version, e.g. 1"
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "extract",
+        "embed",
+        "judge_support",
+        "rerank",
+        "navsum",
+        "adjudicate",
+        "critique",
+        "write",
+        "reference",
+        "none"
+      ],
+      "description": "Role it tests"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "smoke",
+        "screen",
+        "reference"
+      ],
+      "description": "smoke = checks the plumbing only and can never qualify a role; screen = synthetic, first cut that can only eliminate; reference = built from the user's own approved pages, can qualify"
+    },
+    "created": {
+      "type": "string",
+      "description": "Date",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "made_by": {
+      "type": "string",
+      "description": "Who wrote the gold answers (claude, hand, person)"
+    },
+    "source_note": {
+      "type": "string",
+      "description": "Where the texts came from (synthetic text, or the pages the user approved)"
+    },
+    "gold_spotcheck": {
+      "type": "object",
+      "description": "How much of the gold a person looked at",
+      "additionalProperties": true,
+      "properties": {
+        "checked": {
+          "type": "integer",
+          "description": "items checked",
+          "minimum": 0
+        },
+        "total": {
+          "type": "integer",
+          "description": "items total",
+          "minimum": 0
+        },
+        "by": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "person"
+        }
+      },
+      "required": [
+        "checked",
+        "total",
+        "by"
+      ]
+    },
+    "thresholds_fixed_on": {
+      "type": "string",
+      "description": "Thresholds are written before any measurement",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "thresholds": {
+      "type": "array",
+      "description": "Pass marks per measure",
+      "items": {
+        "type": "object",
+        "description": "One threshold",
+        "additionalProperties": true,
+        "properties": {
+          "measure": {
+            "type": "string",
+            "description": "Measure name"
+          },
+          "op": {
+            "type": "string",
+            "enum": [
+              ">=",
+              "<="
+            ],
+            "description": "Comparison"
+          },
+          "value": {
+            "type": "number",
+            "description": "Threshold value",
+            "minimum": 0,
+            "maximum": 1000
+          },
+          "min_n": {
+            "type": "integer",
+            "description": "Fewer items than this means the verdict is inconclusive",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "measure",
+          "op",
+          "value",
+          "min_n"
+        ]
+      }
+    },
+    "notes": {
+      "type": "string",
+      "description": "Notes"
+    }
+  },
+  "required": [
+    "pack_id",
+    "version",
+    "role",
+    "kind",
+    "created",
+    "made_by",
+    "source_note",
+    "gold_spotcheck",
+    "thresholds_fixed_on",
+    "thresholds"
+  ],
+  "$id": "pack_manifest",
+  "title": "pack_manifest"
+}

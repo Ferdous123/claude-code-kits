@@ -1,0 +1,134 @@
+{
+  "type": "object",
+  "description": "One line of corpus/register.jsonl: one paper (the latest line for a paper_id wins)",
+  "additionalProperties": false,
+  "properties": {
+    "paper_id": {
+      "type": "string",
+      "description": "P0001 style id",
+      "pattern": "^P\\d{4,}$"
+    },
+    "sha256": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "SHA-256 of the stored file; null when there is no file"
+    },
+    "original_name": {
+      "type": "string",
+      "description": "File name as the researcher supplied it"
+    },
+    "stored_path": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Path inside the project of the stored copy"
+    },
+    "bytes": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "File size",
+      "minimum": 0
+    },
+    "added": {
+      "type": "string",
+      "description": "When it was registered",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T"
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "upload",
+        "doi",
+        "arxiv",
+        "bibtex",
+        "other"
+      ],
+      "description": "How it came in"
+    },
+    "identifiers": {
+      "type": "object",
+      "description": "DOI, arXiv id and similar, exactly as given",
+      "additionalProperties": true,
+      "properties": {
+        "doi": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "DOI"
+        },
+        "arxiv": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "arXiv id without version"
+        }
+      }
+    },
+    "title": {
+      "type": "string",
+      "description": "Title as the researcher gave it, or 'unknown'"
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "full_text",
+        "abstract_only",
+        "inaccessible",
+        "scanned_no_text",
+        "failed",
+        "excluded"
+      ],
+      "description": "Reading state. Inaccessible, failed and excluded are never merged."
+    },
+    "state_reason": {
+      "type": "string",
+      "description": "Why this state"
+    },
+    "pages": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Page count once parsed",
+      "minimum": 0
+    },
+    "licence": {
+      "type": "string",
+      "description": "Licence of the file as far as known, else 'unknown'"
+    },
+    "screening": {
+      "type": "string",
+      "enum": [
+        "undecided",
+        "included",
+        "excluded"
+      ],
+      "description": "Screening decision"
+    },
+    "screening_reason": {
+      "type": "string",
+      "description": "Reason for the screening decision"
+    }
+  },
+  "required": [
+    "paper_id",
+    "sha256",
+    "original_name",
+    "stored_path",
+    "added",
+    "source",
+    "title",
+    "state",
+    "state_reason",
+    "screening"
+  ],
+  "$id": "register",
+  "title": "register"
+}

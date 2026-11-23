@@ -1,0 +1,45 @@
+{
+  "mosaic_id": "M0001",
+  "goal": "A one-hour wind forecast pipeline for sparse stations",
+  "label": "hypothesis",
+  "steps": [
+    {
+      "order": 1,
+      "step_card_id": "C0003",
+      "takes_in": "hourly wind and pressure",
+      "produces": "cleaned series",
+      "assumes": "not stated",
+      "setting_measured_in": "onshore, 3 years"
+    },
+    {
+      "order": 2,
+      "step_card_id": "C0007",
+      "takes_in": "cleaned series",
+      "produces": "one-hour forecast",
+      "assumes": "stationary seasonality",
+      "setting_measured_in": "offshore, 1 year"
+    }
+  ],
+  "links": [
+    {
+      "from_order": 1,
+      "to_order": 2,
+      "state": "interface_compatible",
+      "stated_fields_first": 3,
+      "stated_fields_second": 4,
+      "evidence": ""
+    }
+  ],
+  "warnings": [
+    "Step 2 was measured offshore; step 1 onshore."
+  ],
+  "feasibility": {
+    "data": "two public stations",
+    "compute": "laptop",
+    "licences": "open data",
+    "skills": "Python",
+    "main_risk": "regime mismatch"
+  },
+  "blueprint_frozen_hash": null,
+  "created": "2026-11-18"
+}

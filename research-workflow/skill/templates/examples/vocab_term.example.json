@@ -1,0 +1,20 @@
+{
+  "term_id": "T0001",
+  "canonical": "RMSE",
+  "dimension": "metric",
+  "synonyms": [
+    "root mean square error",
+    "root-mean-squared error"
+  ],
+  "mapped_wordings": [
+    {
+      "paper_id": "P0001",
+      "wording": "root mean square error",
+      "card_id": null
+    }
+  ],
+  "version": 1,
+  "state": "accepted",
+  "decided_by": "researcher",
+  "note": ""
+}

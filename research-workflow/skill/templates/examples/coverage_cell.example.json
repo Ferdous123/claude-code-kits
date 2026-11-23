@@ -1,0 +1,29 @@
+{
+  "cell_id": "CELL0001",
+  "snapshot_id": "S0001",
+  "vocabulary_version": 1,
+  "dims": {
+    "problem": "wind speed forecast",
+    "method": "LSTM",
+    "dataset": null,
+    "context": "offshore",
+    "metric": "RMSE",
+    "year": null
+  },
+  "card_ids": [],
+  "papers_full_read": [
+    "P0001"
+  ],
+  "papers_abstract_only": [],
+  "papers_inaccessible": [],
+  "status": "empty_after_full_reading",
+  "text_search": {
+    "terms": [
+      "LSTM",
+      "offshore"
+    ],
+    "hits": 0,
+    "date": "2026-11-18"
+  },
+  "wording": "not found in this corpus snapshot"
+}

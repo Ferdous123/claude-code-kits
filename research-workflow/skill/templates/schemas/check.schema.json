@@ -1,0 +1,93 @@
+{
+  "type": "object",
+  "description": "One line of checks/checks.jsonl: the result of one named check on one card version",
+  "additionalProperties": false,
+  "properties": {
+    "check_id": {
+      "type": "string",
+      "description": "K00001 style id"
+    },
+    "card_id": {
+      "type": "string",
+      "description": "Card id"
+    },
+    "card_version": {
+      "type": "integer",
+      "description": "Card version checked",
+      "minimum": 1
+    },
+    "check": {
+      "type": "string",
+      "enum": [
+        "located",
+        "zone_valid",
+        "supported",
+        "consistent",
+        "cross_read"
+      ],
+      "description": "Named for what it proves. There is no check called verified."
+    },
+    "result": {
+      "type": "string",
+      "enum": [
+        "passed",
+        "failed",
+        "flagged",
+        "not_run"
+      ],
+      "description": "passed, failed (card not citable if located or zone_valid), flagged (goes to review), not_run"
+    },
+    "label": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "entails",
+        "partly",
+        "does_not",
+        null
+      ],
+      "description": "For supported only: what the judge said"
+    },
+    "method": {
+      "type": "string",
+      "description": "How: exact, normalised, rule, local_two_pass, claude_adjudicated, ..."
+    },
+    "detail": {
+      "type": "string",
+      "description": "Short factual detail (page, offsets, which models)"
+    },
+    "evidence_hash": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "SHA-256 of the quote plus page text at check time; a changed page makes the result stale"
+    },
+    "run_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Run id"
+    },
+    "date": {
+      "type": "string",
+      "description": "When",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T"
+    }
+  },
+  "required": [
+    "check_id",
+    "card_id",
+    "card_version",
+    "check",
+    "result",
+    "method",
+    "detail",
+    "date"
+  ],
+  "$id": "check",
+  "title": "check"
+}

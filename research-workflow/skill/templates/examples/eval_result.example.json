@@ -1,0 +1,32 @@
+{
+  "run_id": "R0003",
+  "date": "2026-11-18T11:00:00+06:00",
+  "pack_id": "screen-support",
+  "pack_version": "1",
+  "pack_kind": "screen",
+  "role": "judge_support",
+  "model": "gemma3:4b",
+  "family": "gemma",
+  "machine_ref": "abc123",
+  "measures": [
+    {
+      "name": "label_accuracy on screen-support v1 (24 items)",
+      "numerator": 20,
+      "denominator": 24,
+      "value": 0.833,
+      "ci_low": 0.64,
+      "ci_high": 0.93,
+      "threshold": 0.8,
+      "op": ">=",
+      "min_n": 20,
+      "passed": true
+    }
+  ],
+  "speed": {
+    "seconds_total": 96.0,
+    "tokens_per_second": 14.2,
+    "calls": 24
+  },
+  "verdict": "passed",
+  "notes": ""
+}

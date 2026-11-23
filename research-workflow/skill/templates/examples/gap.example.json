@@ -1,0 +1,33 @@
+{
+  "gap_id": "G0001",
+  "statement": "No paper in the reviewed corpus (S0001, 12 papers read in full) evaluates the LSTM forecasts offshore; this is a candidate, not a finding.",
+  "mechanism": "corpus_gap",
+  "scope": {
+    "snapshot_id": "S0001",
+    "vocabulary_version": 1,
+    "date": "2026-11-18",
+    "searches": [
+      {
+        "where": "project full-text",
+        "query": "offshore LSTM",
+        "date": "2026-11-18",
+        "hits": 0
+      }
+    ],
+    "unread_papers": 1,
+    "inaccessible_papers": 0
+  },
+  "card_ids": [
+    "C0001"
+  ],
+  "ledger_ids": [],
+  "state": "raw",
+  "state_decided_by": null,
+  "state_words": null,
+  "rank_inputs": {
+    "papers_read_in_full_nearby": 12,
+    "ledgers_pointing_distinct_cards": 0,
+    "cards_passing_machine_checks": 9
+  },
+  "created": "2026-11-18"
+}

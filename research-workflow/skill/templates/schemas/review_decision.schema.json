@@ -1,0 +1,48 @@
+{
+  "type": "object",
+  "description": "One line of review/decisions.jsonl: the settlement of one queue item",
+  "additionalProperties": false,
+  "properties": {
+    "queue_id": {
+      "type": "string",
+      "description": "Queue id"
+    },
+    "decision": {
+      "type": "string",
+      "enum": [
+        "accept_A",
+        "accept_B",
+        "accept_edited",
+        "reject"
+      ],
+      "description": "What was decided"
+    },
+    "edited": {
+      "type": "object",
+      "description": "For accept_edited: the corrected fields; located is re-run on them",
+      "additionalProperties": true
+    },
+    "reason": {
+      "type": "string",
+      "description": "At most 25 words"
+    },
+    "by": {
+      "type": "string",
+      "description": "claude or a person's name"
+    },
+    "date": {
+      "type": "string",
+      "description": "When",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T"
+    }
+  },
+  "required": [
+    "queue_id",
+    "decision",
+    "reason",
+    "by",
+    "date"
+  ],
+  "$id": "review_decision",
+  "title": "review_decision"
+}

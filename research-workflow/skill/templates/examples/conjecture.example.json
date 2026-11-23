@@ -1,0 +1,21 @@
+{
+  "conjecture_id": "J0001",
+  "researcher_words": "Humidity probably helps only when the sensor is within 5 km of the coast.",
+  "premises": [
+    "Humidity is a useful input only for coastal sensors"
+  ],
+  "claim": "Humidity lowers forecast error only within 5 km of the coast.",
+  "restated_confirmed": true,
+  "consequences": [
+    {
+      "statement": "Inland stations should show no RMSE change when humidity is added.",
+      "status": "untested",
+      "card_ids": []
+    }
+  ],
+  "evidence_against_card_ids": [],
+  "generated_hypotheses": [],
+  "cheapest_test": "Rerun one model on two inland stations with and without humidity.",
+  "dossier_id": null,
+  "created": "2026-11-18"
+}

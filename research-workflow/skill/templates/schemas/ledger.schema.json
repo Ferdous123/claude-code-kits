@@ -1,0 +1,140 @@
+{
+  "type": "object",
+  "description": "One line of map/ledgers/<kind>.jsonl: a ledger record (contradiction, anomaly, shared assumption, patch, time, structure match)",
+  "additionalProperties": false,
+  "properties": {
+    "ledger_id": {
+      "type": "string",
+      "description": "L0001 style id"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "contradiction",
+        "anomaly",
+        "shared_assumption",
+        "patch",
+        "time",
+        "structure_match"
+      ],
+      "description": "Which ledger"
+    },
+    "snapshot_id": {
+      "type": "string",
+      "description": "Snapshot"
+    },
+    "statement": {
+      "type": "string",
+      "description": "What the record says, in plain words, with scope"
+    },
+    "card_ids": {
+      "type": "array",
+      "description": "Cards it rests on",
+      "items": {
+        "type": "string",
+        "description": "card id"
+      },
+      "minItems": 1
+    },
+    "explanations_tried": {
+      "type": "array",
+      "description": "Contradictions: ways tried to explain it away",
+      "items": {
+        "type": "object",
+        "description": "One attempt",
+        "additionalProperties": true,
+        "properties": {
+          "explanation": {
+            "type": "string",
+            "description": "Different population, dataset version, metric definition, regime or year"
+          },
+          "card_ids": {
+            "type": "array",
+            "description": "Located cards that show the claimed difference (empty = does not dissolve)",
+            "items": {
+              "type": "string",
+              "description": "card id"
+            }
+          },
+          "outcome": {
+            "type": "string",
+            "enum": [
+              "dissolves",
+              "does_not_dissolve"
+            ],
+            "description": "Result"
+          }
+        },
+        "required": [
+          "explanation",
+          "card_ids",
+          "outcome"
+        ]
+      }
+    },
+    "stated_by_papers": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Shared assumptions: papers that state it",
+      "minimum": 0
+    },
+    "inferred_for_papers": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Shared assumptions: papers it is inferred for (machine-inferred, not counted in the headline)",
+      "minimum": 0
+    },
+    "negation_tested_by": {
+      "type": "array",
+      "description": "Papers that test the opposite",
+      "items": {
+        "type": "string",
+        "description": "paper id"
+      }
+    },
+    "searches": {
+      "type": "array",
+      "description": "Full-text and other searches behind a 'none tests it' statement",
+      "items": {
+        "type": "string",
+        "description": "search id"
+      }
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "open",
+        "confirmed",
+        "dismissed"
+      ],
+      "description": "Review state"
+    },
+    "dismissed_reason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Why dismissed (kept so it is not raised again)"
+    },
+    "created": {
+      "type": "string",
+      "description": "Date",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    }
+  },
+  "required": [
+    "ledger_id",
+    "kind",
+    "snapshot_id",
+    "statement",
+    "card_ids",
+    "state",
+    "created"
+  ],
+  "$id": "ledger",
+  "title": "ledger"
+}

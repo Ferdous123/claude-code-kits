@@ -1,0 +1,331 @@
+{
+  "type": "object",
+  "description": "dossiers/D0001.json: the case file for one gap or conjecture",
+  "additionalProperties": false,
+  "properties": {
+    "dossier_id": {
+      "type": "string",
+      "description": "D0001 style id"
+    },
+    "subject": {
+      "type": "object",
+      "description": "What it is about",
+      "additionalProperties": true,
+      "properties": {
+        "kind": {
+          "type": "string",
+          "enum": [
+            "gap",
+            "conjecture"
+          ],
+          "description": "Kind"
+        },
+        "id": {
+          "type": "string",
+          "description": "gap or conjecture id"
+        }
+      },
+      "required": [
+        "kind",
+        "id"
+      ]
+    },
+    "statement": {
+      "type": "string",
+      "description": "The statement under test"
+    },
+    "statement_edited_on": {
+      "type": "string",
+      "description": "Last edit of the statement",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "scope": {
+      "type": "object",
+      "description": "Scope line: what a gap or dossier statement rests on",
+      "additionalProperties": true,
+      "properties": {
+        "snapshot_id": {
+          "type": "string",
+          "description": "Corpus snapshot id, e.g. S0001"
+        },
+        "vocabulary_version": {
+          "type": "integer",
+          "description": "Vocabulary version used",
+          "minimum": 0
+        },
+        "date": {
+          "type": "string",
+          "description": "Date the scope was written",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "searches": {
+          "type": "array",
+          "description": "External and full-text searches run",
+          "items": {
+            "type": "object",
+            "description": "One search",
+            "additionalProperties": true,
+            "properties": {
+              "where": {
+                "type": "string",
+                "description": "Where it was run (project full-text, a metadata service, a web search)"
+              },
+              "query": {
+                "type": "string",
+                "description": "The exact query"
+              },
+              "date": {
+                "type": "string",
+                "description": "Date run",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              },
+              "hits": {
+                "type": "integer",
+                "description": "Number of hits",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "where",
+              "query",
+              "date",
+              "hits"
+            ]
+          }
+        },
+        "unread_papers": {
+          "type": "integer",
+          "description": "Papers in the neighbourhood not read in full",
+          "minimum": 0
+        },
+        "inaccessible_papers": {
+          "type": "integer",
+          "description": "Papers in the neighbourhood that could not be obtained",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "snapshot_id",
+        "vocabulary_version",
+        "date",
+        "searches",
+        "unread_papers",
+        "inaccessible_papers"
+      ]
+    },
+    "evidence_for": {
+      "type": "array",
+      "description": "Card ids for",
+      "items": {
+        "type": "string",
+        "description": "card id"
+      }
+    },
+    "evidence_against": {
+      "type": "array",
+      "description": "Card ids against (near misses included)",
+      "items": {
+        "type": "string",
+        "description": "card id"
+      }
+    },
+    "near_misses": {
+      "type": "array",
+      "description": "Papers that almost do this",
+      "items": {
+        "type": "object",
+        "description": "One",
+        "additionalProperties": true,
+        "properties": {
+          "ref": {
+            "type": "string",
+            "description": "paper id or reference"
+          },
+          "why": {
+            "type": "string",
+            "description": "Why it is a near miss"
+          }
+        },
+        "required": [
+          "ref",
+          "why"
+        ]
+      }
+    },
+    "prior_art": {
+      "type": "array",
+      "description": "Prior-art searches",
+      "items": {
+        "type": "object",
+        "description": "One search",
+        "additionalProperties": true,
+        "properties": {
+          "search_id": {
+            "type": "string",
+            "description": "id in corpus/search_log.jsonl"
+          },
+          "ran_on": {
+            "type": "string",
+            "description": "date",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+          },
+          "neighbours": {
+            "type": "array",
+            "description": "Near neighbours found",
+            "items": {
+              "type": "object",
+              "description": "One neighbour",
+              "additionalProperties": true,
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "description": "reference"
+                },
+                "overlap_quote": {
+                  "type": "string",
+                  "description": "Sentence quoted from its abstract or text"
+                },
+                "note": {
+                  "type": "string",
+                  "description": "Listed only; a person decides if it kills the idea"
+                }
+              },
+              "required": [
+                "ref",
+                "overlap_quote"
+              ]
+            }
+          }
+        },
+        "required": [
+          "search_id",
+          "ran_on",
+          "neighbours"
+        ]
+      }
+    },
+    "unread_sources": {
+      "type": "array",
+      "description": "Unread or inaccessible sources in the neighbourhood",
+      "items": {
+        "type": "string",
+        "description": "name"
+      }
+    },
+    "attacks": {
+      "type": "array",
+      "description": "Reviewer attacks. The model that raised one cannot close it.",
+      "items": {
+        "type": "object",
+        "description": "One attack",
+        "additionalProperties": true,
+        "properties": {
+          "lens": {
+            "type": "string",
+            "enum": [
+              "domain",
+              "method_statistics",
+              "prior_work",
+              "reproducibility",
+              "feasibility",
+              "ethics"
+            ],
+            "description": "Lens"
+          },
+          "text": {
+            "type": "string",
+            "description": "The objection"
+          },
+          "raised_by": {
+            "type": "string",
+            "description": "Model or person"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "open",
+              "closed"
+            ],
+            "description": "State"
+          },
+          "closed_by": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Person"
+          },
+          "closed_reason": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "Reason"
+          }
+        },
+        "required": [
+          "lens",
+          "text",
+          "raised_by",
+          "state"
+        ]
+      }
+    },
+    "decision": {
+      "type": "object",
+      "description": "Decision",
+      "additionalProperties": true,
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "open",
+            "killed",
+            "parked",
+            "adopted"
+          ],
+          "description": "State"
+        },
+        "by": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Person"
+        },
+        "on": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Date",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "reason": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "A sentence"
+        }
+      },
+      "required": [
+        "state"
+      ]
+    }
+  },
+  "required": [
+    "dossier_id",
+    "subject",
+    "statement",
+    "statement_edited_on",
+    "scope",
+    "evidence_for",
+    "evidence_against",
+    "prior_art",
+    "attacks",
+    "decision"
+  ],
+  "$id": "dossier",
+  "title": "dossier"
+}

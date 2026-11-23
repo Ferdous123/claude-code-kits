@@ -1,0 +1,511 @@
+{
+  "type": "object",
+  "description": "roles.json: which model holds which role on this machine, with the result that earned it",
+  "additionalProperties": false,
+  "properties": {
+    "updated": {
+      "type": "string",
+      "description": "Last change",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T"
+    },
+    "roles": {
+      "type": "object",
+      "description": "One entry per role name",
+      "additionalProperties": false,
+      "properties": {
+        "extract": {
+          "type": "object",
+          "description": "Role entry",
+          "additionalProperties": false,
+          "properties": {
+            "assigned": {
+              "type": "string",
+              "enum": [
+                "claude",
+                "local",
+                "person",
+                "none"
+              ],
+              "description": "Who does this role now"
+            },
+            "primary": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Model tag for the first local pass"
+            },
+            "secondary": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Model tag (different family) for the second pass"
+            },
+            "evidence": {
+              "type": "array",
+              "description": "Run ids from evals/results.jsonl that earned the assignment",
+              "items": {
+                "type": "string",
+                "description": "run id"
+              }
+            },
+            "stale": {
+              "type": "boolean",
+              "description": "True when the machine changed or a model was removed: retest before use"
+            },
+            "note": {
+              "type": "string",
+              "description": "Plain note"
+            }
+          },
+          "required": [
+            "assigned",
+            "primary",
+            "secondary",
+            "evidence",
+            "stale"
+          ]
+        },
+        "embed": {
+          "type": "object",
+          "description": "Role entry",
+          "additionalProperties": false,
+          "properties": {
+            "assigned": {
+              "type": "string",
+              "enum": [
+                "claude",
+                "local",
+                "person",
+                "none"
+              ],
+              "description": "Who does this role now"
+            },
+            "primary": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Model tag for the first local pass"
+            },
+            "secondary": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Model tag (different family) for the second pass"
+            },
+            "evidence": {
+              "type": "array",
+              "description": "Run ids from evals/results.jsonl that earned the assignment",
+              "items": {
+                "type": "string",
+                "description": "run id"
+              }
+            },
+            "stale": {
+              "type": "boolean",
+              "description": "True when the machine changed or a model was removed: retest before use"
+            },
+            "note": {
+              "type": "string",
+              "description": "Plain note"
+            }
+          },
+          "required": [
+            "assigned",
+            "primary",
+            "secondary",
+            "evidence",
+            "stale"
+          ]
+        },
+        "judge_support": {
+          "type": "object",
+          "description": "Role entry",
+          "additionalProperties": false,
+          "properties": {
+            "assigned": {
+              "type": "string",
+              "enum": [
+                "claude",
+                "local",
+                "person",
+                "none"
+              ],
+              "description": "Who does this role now"
+            },
+            "primary": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Model tag for the first local pass"
+            },
+            "secondary": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Model tag (different family) for the second pass"
+            },
+            "evidence": {
+              "type": "array",
+              "description": "Run ids from evals/results.jsonl that earned the assignment",
+              "items": {
+                "type": "string",
+                "description": "run id"
+              }
+            },
+            "stale": {
+              "type": "boolean",
+              "description": "True when the machine changed or a model was removed: retest before use"
+            },
+            "note": {
+              "type": "string",
+              "description": "Plain note"
+            }
+          },
+          "required": [
+            "assigned",
+            "primary",
+            "secondary",
+            "evidence",
+            "stale"
+          ]
+        },
+        "rerank": {
+          "type": "object",
+          "description": "Role entry",
+          "additionalProperties": false,
+          "properties": {
+            "assigned": {
+              "type": "string",
+              "enum": [
+                "claude",
+                "local",
+                "person",
+                "none"
+              ],
+              "description": "Who does this role now"
+            },
+            "primary": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Model tag for the first local pass"
+            },
+            "secondary": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Model tag (different family) for the second pass"
+            },
+            "evidence": {
+              "type": "array",
+              "description": "Run ids from evals/results.jsonl that earned the assignment",
+              "items": {
+                "type": "string",
+                "description": "run id"
+              }
+            },
+            "stale": {
+              "type": "boolean",
+              "description": "True when the machine changed or a model was removed: retest before use"
+            },
+            "note": {
+              "type": "string",
+              "description": "Plain note"
+            }
+          },
+          "required": [
+            "assigned",
+            "primary",
+            "secondary",
+            "evidence",
+            "stale"
+          ]
+        },
+        "navsum": {
+          "type": "object",
+          "description": "Role entry",
+          "additionalProperties": false,
+          "properties": {
+            "assigned": {
+              "type": "string",
+              "enum": [
+                "claude",
+                "local",
+                "person",
+                "none"
+              ],
+              "description": "Who does this role now"
+            },
+            "primary": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Model tag for the first local pass"
+            },
+            "secondary": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Model tag (different family) for the second pass"
+            },
+            "evidence": {
+              "type": "array",
+              "description": "Run ids from evals/results.jsonl that earned the assignment",
+              "items": {
+                "type": "string",
+                "description": "run id"
+              }
+            },
+            "stale": {
+              "type": "boolean",
+              "description": "True when the machine changed or a model was removed: retest before use"
+            },
+            "note": {
+              "type": "string",
+              "description": "Plain note"
+            }
+          },
+          "required": [
+            "assigned",
+            "primary",
+            "secondary",
+            "evidence",
+            "stale"
+          ]
+        },
+        "adjudicate": {
+          "type": "object",
+          "description": "Role entry",
+          "additionalProperties": false,
+          "properties": {
+            "assigned": {
+              "type": "string",
+              "enum": [
+                "claude",
+                "local",
+                "person",
+                "none"
+              ],
+              "description": "Who does this role now"
+            },
+            "primary": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Model tag for the first local pass"
+            },
+            "secondary": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Model tag (different family) for the second pass"
+            },
+            "evidence": {
+              "type": "array",
+              "description": "Run ids from evals/results.jsonl that earned the assignment",
+              "items": {
+                "type": "string",
+                "description": "run id"
+              }
+            },
+            "stale": {
+              "type": "boolean",
+              "description": "True when the machine changed or a model was removed: retest before use"
+            },
+            "note": {
+              "type": "string",
+              "description": "Plain note"
+            }
+          },
+          "required": [
+            "assigned",
+            "primary",
+            "secondary",
+            "evidence",
+            "stale"
+          ]
+        },
+        "critique": {
+          "type": "object",
+          "description": "Role entry",
+          "additionalProperties": false,
+          "properties": {
+            "assigned": {
+              "type": "string",
+              "enum": [
+                "claude",
+                "local",
+                "person",
+                "none"
+              ],
+              "description": "Who does this role now"
+            },
+            "primary": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Model tag for the first local pass"
+            },
+            "secondary": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Model tag (different family) for the second pass"
+            },
+            "evidence": {
+              "type": "array",
+              "description": "Run ids from evals/results.jsonl that earned the assignment",
+              "items": {
+                "type": "string",
+                "description": "run id"
+              }
+            },
+            "stale": {
+              "type": "boolean",
+              "description": "True when the machine changed or a model was removed: retest before use"
+            },
+            "note": {
+              "type": "string",
+              "description": "Plain note"
+            }
+          },
+          "required": [
+            "assigned",
+            "primary",
+            "secondary",
+            "evidence",
+            "stale"
+          ]
+        },
+        "write": {
+          "type": "object",
+          "description": "Role entry",
+          "additionalProperties": false,
+          "properties": {
+            "assigned": {
+              "type": "string",
+              "enum": [
+                "claude",
+                "local",
+                "person",
+                "none"
+              ],
+              "description": "Who does this role now"
+            },
+            "primary": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Model tag for the first local pass"
+            },
+            "secondary": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Model tag (different family) for the second pass"
+            },
+            "evidence": {
+              "type": "array",
+              "description": "Run ids from evals/results.jsonl that earned the assignment",
+              "items": {
+                "type": "string",
+                "description": "run id"
+              }
+            },
+            "stale": {
+              "type": "boolean",
+              "description": "True when the machine changed or a model was removed: retest before use"
+            },
+            "note": {
+              "type": "string",
+              "description": "Plain note"
+            }
+          },
+          "required": [
+            "assigned",
+            "primary",
+            "secondary",
+            "evidence",
+            "stale"
+          ]
+        },
+        "reference": {
+          "type": "object",
+          "description": "Role entry",
+          "additionalProperties": false,
+          "properties": {
+            "assigned": {
+              "type": "string",
+              "enum": [
+                "claude",
+                "local",
+                "person",
+                "none"
+              ],
+              "description": "Who does this role now"
+            },
+            "primary": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Model tag for the first local pass"
+            },
+            "secondary": {
+              "type": [
+                "string",
+                "null"
+              ],
+              "description": "Model tag (different family) for the second pass"
+            },
+            "evidence": {
+              "type": "array",
+              "description": "Run ids from evals/results.jsonl that earned the assignment",
+              "items": {
+                "type": "string",
+                "description": "run id"
+              }
+            },
+            "stale": {
+              "type": "boolean",
+              "description": "True when the machine changed or a model was removed: retest before use"
+            },
+            "note": {
+              "type": "string",
+              "description": "Plain note"
+            }
+          },
+          "required": [
+            "assigned",
+            "primary",
+            "secondary",
+            "evidence",
+            "stale"
+          ]
+        }
+      }
+    }
+  },
+  "required": [
+    "updated",
+    "roles"
+  ],
+  "$id": "roles",
+  "title": "roles"
+}

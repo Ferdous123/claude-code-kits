@@ -1,0 +1,65 @@
+{
+  "dossier_id": "D0001",
+  "subject": {
+    "kind": "gap",
+    "id": "G0001"
+  },
+  "statement": "No paper in the reviewed corpus (S0001, 12 papers read in full) evaluates the LSTM forecasts offshore; this is a candidate, not a finding.",
+  "statement_edited_on": "2026-11-18",
+  "scope": {
+    "snapshot_id": "S0001",
+    "vocabulary_version": 1,
+    "date": "2026-11-18",
+    "searches": [
+      {
+        "where": "project full-text",
+        "query": "offshore LSTM",
+        "date": "2026-11-18",
+        "hits": 0
+      }
+    ],
+    "unread_papers": 1,
+    "inaccessible_papers": 0
+  },
+  "evidence_for": [
+    "C0001"
+  ],
+  "evidence_against": [],
+  "near_misses": [
+    {
+      "ref": "P0002",
+      "why": "Tests LSTM at an onshore site only"
+    }
+  ],
+  "prior_art": [
+    {
+      "search_id": "Q0001",
+      "ran_on": "2026-11-18",
+      "neighbours": [
+        {
+          "ref": "Doe 2022",
+          "overlap_quote": "We forecast offshore wind with a recurrent network."
+        }
+      ]
+    }
+  ],
+  "unread_sources": [
+    "P0007 (inaccessible)"
+  ],
+  "attacks": [
+    {
+      "lens": "prior_work",
+      "text": "Offshore forecasting with recurrent nets may exist outside the corpus.",
+      "raised_by": "claude",
+      "state": "open",
+      "closed_by": null,
+      "closed_reason": null
+    }
+  ],
+  "decision": {
+    "state": "open",
+    "by": null,
+    "on": null,
+    "reason": null
+  }
+}

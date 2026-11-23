@@ -1,0 +1,70 @@
+{
+  "type": "object",
+  "description": "One line of exemplars/exemplars.jsonl: a worked example shown to a local model as delimited data, never as instructions",
+  "additionalProperties": false,
+  "properties": {
+    "exemplar_id": {
+      "type": "string",
+      "description": "EX0001 style id"
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "extract",
+        "embed",
+        "judge_support",
+        "rerank",
+        "navsum",
+        "adjudicate",
+        "critique",
+        "write",
+        "reference"
+      ],
+      "description": "Role"
+    },
+    "case_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Regression case it came from"
+    },
+    "paper_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Paper"
+    },
+    "input_passage": {
+      "type": "string",
+      "description": "Short passage (cap 600 characters)",
+      "maxLength": 600
+    },
+    "wrong_output": {
+      "type": "string",
+      "description": "Wrong output (cap 300)",
+      "maxLength": 300
+    },
+    "right_output": {
+      "type": "string",
+      "description": "Right output (cap 300)",
+      "maxLength": 300
+    },
+    "created": {
+      "type": "string",
+      "description": "Date",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    }
+  },
+  "required": [
+    "exemplar_id",
+    "role",
+    "input_passage",
+    "wrong_output",
+    "right_output",
+    "created"
+  ],
+  "$id": "exemplar",
+  "title": "exemplar"
+}

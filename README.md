@@ -6,6 +6,7 @@ Skills and tools for working with Claude Code. Each kit stands alone.
 |---|---|
 | [handoff](#handoff) | End-of-session handoffs a fresh session on any machine continues from, checked by `hk.py` |
 | [usage-gate](usage-gate/README.md) | Stops sessions cleanly near the 5-hour or weekly plan limit and resumes after the reset; optional Telegram alerts and phone commands |
+| [research-workflow](research-workflow/README.md) | Evidence-first research workflow from plain files: papers become located evidence cards, gaps carry a scope line, methods are assembled as cited hypotheses; checks by script, local models only after a measured test |
 
 ## handoff
 

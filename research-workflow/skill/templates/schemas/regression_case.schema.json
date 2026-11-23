@@ -1,0 +1,77 @@
+{
+  "type": "object",
+  "description": "One line of regression/cases.jsonl: a case that must stay fixed",
+  "additionalProperties": false,
+  "properties": {
+    "case_id": {
+      "type": "string",
+      "description": "RG0001 style id"
+    },
+    "role": {
+      "type": "string",
+      "enum": [
+        "extract",
+        "embed",
+        "judge_support",
+        "rerank",
+        "navsum",
+        "adjudicate",
+        "critique",
+        "write",
+        "reference"
+      ],
+      "description": "Role it exercises"
+    },
+    "source": {
+      "type": "string",
+      "description": "correction id or failure description"
+    },
+    "paper_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Paper"
+    },
+    "input_ref": {
+      "type": "string",
+      "description": "Pointer to the input (page, card id), not a copy of paper text"
+    },
+    "wrong_output": {
+      "type": "string",
+      "description": "What went wrong"
+    },
+    "right_output": {
+      "type": "string",
+      "description": "The right output"
+    },
+    "created": {
+      "type": "string",
+      "description": "Date",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "suspended": {
+      "type": "boolean",
+      "description": "True while a correction is disputed"
+    },
+    "last_run_passed": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "Result of the last run"
+    }
+  },
+  "required": [
+    "case_id",
+    "role",
+    "source",
+    "input_ref",
+    "wrong_output",
+    "right_output",
+    "created",
+    "suspended"
+  ],
+  "$id": "regression_case",
+  "title": "regression_case"
+}

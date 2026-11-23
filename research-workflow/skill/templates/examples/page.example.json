@@ -1,0 +1,41 @@
+{
+  "paper_id": "P0001",
+  "page": 3,
+  "width": 595.0,
+  "height": 842.0,
+  "rotation": 0,
+  "text": "4 Results\n\nThe proposed model reached an RMSE of 0.82 m/s on the test set.",
+  "text_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+  "chars": 70,
+  "blocks": [
+    {
+      "block_id": "P0001-p0003-b001",
+      "start": 0,
+      "end": 9,
+      "bbox": [
+        72.0,
+        90.0,
+        140.0,
+        104.0
+      ],
+      "zone": "heading",
+      "zone_source": "heuristic"
+    },
+    {
+      "block_id": "P0001-p0003-b002",
+      "start": 11,
+      "end": 70,
+      "bbox": [
+        72.0,
+        110.0,
+        520.0,
+        126.0
+      ],
+      "zone": "body",
+      "zone_source": "heuristic"
+    }
+  ],
+  "backend": "pymupdf",
+  "parser_version": "1.24.0",
+  "extracted_on": "2026-11-18T10:05:00+06:00"
+}

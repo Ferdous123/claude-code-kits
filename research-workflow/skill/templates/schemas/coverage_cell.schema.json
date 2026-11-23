@@ -1,0 +1,159 @@
+{
+  "type": "object",
+  "description": "One line of map/coverage.jsonl: one cell of the coverage matrix",
+  "additionalProperties": false,
+  "properties": {
+    "cell_id": {
+      "type": "string",
+      "description": "M-cell id, e.g. CELL0001"
+    },
+    "snapshot_id": {
+      "type": "string",
+      "description": "Snapshot"
+    },
+    "vocabulary_version": {
+      "type": "integer",
+      "description": "Vocabulary version",
+      "minimum": 0
+    },
+    "dims": {
+      "type": "object",
+      "description": "Value per dimension (null = not part of this cell)",
+      "additionalProperties": true,
+      "properties": {
+        "problem": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "problem"
+        },
+        "method": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "method"
+        },
+        "dataset": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "dataset"
+        },
+        "context": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "context"
+        },
+        "metric": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "metric"
+        },
+        "year": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "year"
+        }
+      }
+    },
+    "card_ids": {
+      "type": "array",
+      "description": "Cards in the cell",
+      "items": {
+        "type": "string",
+        "description": "card id"
+      }
+    },
+    "papers_full_read": {
+      "type": "array",
+      "description": "Paper ids read in full",
+      "items": {
+        "type": "string",
+        "description": "paper id"
+      }
+    },
+    "papers_abstract_only": {
+      "type": "array",
+      "description": "Abstract-only paper ids (never evidence)",
+      "items": {
+        "type": "string",
+        "description": "paper id"
+      }
+    },
+    "papers_inaccessible": {
+      "type": "array",
+      "description": "Inaccessible paper ids",
+      "items": {
+        "type": "string",
+        "description": "paper id"
+      }
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "populated",
+        "empty_unread_neighbours",
+        "empty_after_full_reading",
+        "empty_not_meaningful",
+        "possible_extraction_miss"
+      ],
+      "description": "populated, or why it is empty"
+    },
+    "text_search": {
+      "type": "object",
+      "description": "Full-text search for the cell's terms and synonyms",
+      "additionalProperties": true,
+      "properties": {
+        "terms": {
+          "type": "array",
+          "description": "terms",
+          "items": {
+            "type": "string",
+            "description": "term"
+          }
+        },
+        "hits": {
+          "type": "integer",
+          "description": "hits",
+          "minimum": 0
+        },
+        "date": {
+          "type": "string",
+          "description": "date",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        }
+      },
+      "required": [
+        "terms",
+        "hits",
+        "date"
+      ]
+    },
+    "wording": {
+      "type": "string",
+      "description": "How an empty cell is described: 'not found in this corpus snapshot'"
+    }
+  },
+  "required": [
+    "cell_id",
+    "snapshot_id",
+    "vocabulary_version",
+    "dims",
+    "card_ids",
+    "papers_full_read",
+    "papers_abstract_only",
+    "papers_inaccessible",
+    "status"
+  ],
+  "$id": "coverage_cell",
+  "title": "coverage_cell"
+}

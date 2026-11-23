@@ -1,0 +1,12 @@
+{
+  "case_id": "RG0001",
+  "role": "extract",
+  "source": "X0001",
+  "paper_id": "P0001",
+  "input_ref": "P0001 page 3",
+  "wrong_output": "value 0.28",
+  "right_output": "value 0.82",
+  "created": "2026-11-18",
+  "suspended": false,
+  "last_run_passed": null
+}

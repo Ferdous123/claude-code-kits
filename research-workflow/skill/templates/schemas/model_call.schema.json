@@ -1,0 +1,97 @@
+{
+  "type": "object",
+  "description": "One line of logs/model_calls.jsonl: every local model call",
+  "additionalProperties": false,
+  "properties": {
+    "call_id": {
+      "type": "string",
+      "description": "Id"
+    },
+    "date": {
+      "type": "string",
+      "description": "When",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T"
+    },
+    "role": {
+      "type": "string",
+      "description": "Role"
+    },
+    "model": {
+      "type": "string",
+      "description": "Model tag"
+    },
+    "run_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Run id"
+    },
+    "input_ref": {
+      "type": "string",
+      "description": "Pointer to the input plus its hash; not a copy of paper text"
+    },
+    "prompt_sha256": {
+      "type": "string",
+      "description": "Hash of the full prompt"
+    },
+    "params": {
+      "type": "object",
+      "description": "Temperature, context size, thinking switch",
+      "additionalProperties": true
+    },
+    "output_raw": {
+      "type": "string",
+      "description": "Raw output"
+    },
+    "parse_status": {
+      "type": "string",
+      "enum": [
+        "ok",
+        "invalid_json",
+        "schema_invalid",
+        "error"
+      ],
+      "description": "Result of parsing against the schema"
+    },
+    "finish_reason": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Why generation stopped"
+    },
+    "tokens_in": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Prompt tokens"
+    },
+    "tokens_out": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Output tokens"
+    },
+    "seconds": {
+      "type": "number",
+      "description": "Wall seconds"
+    }
+  },
+  "required": [
+    "call_id",
+    "date",
+    "role",
+    "model",
+    "input_ref",
+    "prompt_sha256",
+    "params",
+    "output_raw",
+    "parse_status",
+    "seconds"
+  ],
+  "$id": "model_call",
+  "title": "model_call"
+}

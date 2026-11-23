@@ -1,0 +1,59 @@
+{
+  "type": "object",
+  "description": "One line of corpus/search_log.jsonl: a discovery or prior-art search that was run",
+  "additionalProperties": false,
+  "properties": {
+    "search_id": {
+      "type": "string",
+      "description": "Q0001 style id"
+    },
+    "date": {
+      "type": "string",
+      "description": "Date run",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "where": {
+      "type": "string",
+      "description": "Service or place searched"
+    },
+    "query": {
+      "type": "string",
+      "description": "Exact query text"
+    },
+    "hits": {
+      "type": "integer",
+      "description": "Number of results returned",
+      "minimum": 0
+    },
+    "purpose": {
+      "type": "string",
+      "enum": [
+        "discovery",
+        "prior_art",
+        "full_text_check",
+        "other"
+      ],
+      "description": "Why"
+    },
+    "sent_outside": {
+      "type": "boolean",
+      "description": "True if the query text left this PC (always true for web or service searches)"
+    },
+    "shown_to_user_first": {
+      "type": "boolean",
+      "description": "True if the researcher saw the query before it was sent"
+    }
+  },
+  "required": [
+    "search_id",
+    "date",
+    "where",
+    "query",
+    "hits",
+    "purpose",
+    "sent_outside",
+    "shown_to_user_first"
+  ],
+  "$id": "search_log",
+  "title": "search_log"
+}

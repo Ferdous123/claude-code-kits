@@ -1,0 +1,118 @@
+{
+  "type": "object",
+  "description": "One line of candidates/<paper_id>/<pass>.jsonl: a local model's proposal. Not a card until it passes the checks and the agreement step.",
+  "additionalProperties": false,
+  "properties": {
+    "cand_id": {
+      "type": "string",
+      "description": "Id"
+    },
+    "run_id": {
+      "type": "string",
+      "description": "Run id"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "card",
+        "support"
+      ],
+      "description": "What it proposes"
+    },
+    "pass_name": {
+      "type": "string",
+      "enum": [
+        "A",
+        "B"
+      ],
+      "description": "Which independent pass"
+    },
+    "paper_id": {
+      "type": "string",
+      "description": "Paper"
+    },
+    "page": {
+      "type": "integer",
+      "description": "Page",
+      "minimum": 1
+    },
+    "model": {
+      "type": "string",
+      "description": "Model tag"
+    },
+    "date": {
+      "type": "string",
+      "description": "When",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T"
+    },
+    "proposed": {
+      "type": "object",
+      "description": "The proposal: for kind card the card fields type, field, stated, statement, value, quote, attribution, wording_strength; for kind support card_id and label",
+      "additionalProperties": true
+    },
+    "schema_valid": {
+      "type": "boolean",
+      "description": "Output matched the schema"
+    },
+    "located": {
+      "type": "object",
+      "description": "Result of the located check on the quote (card kind)",
+      "additionalProperties": true,
+      "properties": {
+        "result": {
+          "type": "string",
+          "enum": [
+            "passed",
+            "failed",
+            "not_run"
+          ],
+          "description": "Result"
+        },
+        "method": {
+          "type": "string",
+          "description": "exact or normalised or none"
+        },
+        "start": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "start offset"
+        },
+        "end": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "description": "end offset"
+        },
+        "block_ids": {
+          "type": "array",
+          "description": "blocks",
+          "items": {
+            "type": "string",
+            "description": "id"
+          }
+        },
+        "zone": {
+          "type": "string",
+          "description": "zone"
+        }
+      }
+    }
+  },
+  "required": [
+    "cand_id",
+    "run_id",
+    "kind",
+    "pass_name",
+    "paper_id",
+    "page",
+    "model",
+    "date",
+    "proposed",
+    "schema_valid"
+  ],
+  "$id": "candidate",
+  "title": "candidate"
+}

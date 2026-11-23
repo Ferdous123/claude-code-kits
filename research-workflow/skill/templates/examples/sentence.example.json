@@ -1,0 +1,12 @@
+{
+  "sentence_id": "SN0001",
+  "draft_id": "DR0001",
+  "order": 1,
+  "text": "On the test set the proposed model reached an RMSE of 0.82 m/s [C0001].",
+  "origin": "machine",
+  "machine_text": "On the test set the proposed model reached an RMSE of 0.82 m/s [C0001].",
+  "kind": "supported",
+  "card_ids": [
+    "C0001"
+  ]
+}

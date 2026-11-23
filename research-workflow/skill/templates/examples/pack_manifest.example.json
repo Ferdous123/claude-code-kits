@@ -1,0 +1,30 @@
+{
+  "pack_id": "screen-support",
+  "version": "1",
+  "role": "judge_support",
+  "kind": "screen",
+  "created": "2026-11-18",
+  "made_by": "hand",
+  "source_note": "Synthetic text written for this skill; no real paper text.",
+  "gold_spotcheck": {
+    "checked": 0,
+    "total": 24,
+    "by": null
+  },
+  "thresholds_fixed_on": "2026-11-18",
+  "thresholds": [
+    {
+      "measure": "label_accuracy",
+      "op": ">=",
+      "value": 0.8,
+      "min_n": 20
+    },
+    {
+      "measure": "false_entails_rate",
+      "op": "<=",
+      "value": 0.1,
+      "min_n": 8
+    }
+  ],
+  "notes": ""
+}

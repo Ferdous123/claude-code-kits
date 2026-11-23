@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "description": "One line of packs/<id>/gold.jsonl: the known answer for one item",
+  "additionalProperties": false,
+  "properties": {
+    "item_id": {
+      "type": "string",
+      "description": "Item id"
+    },
+    "expected": {
+      "type": "object",
+      "description": "Expected answer; fields depend on the role",
+      "additionalProperties": true
+    }
+  },
+  "required": [
+    "item_id",
+    "expected"
+  ],
+  "$id": "pack_gold",
+  "title": "pack_gold"
+}

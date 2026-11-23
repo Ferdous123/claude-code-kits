@@ -1,0 +1,21 @@
+{
+  "project_id": "wind-forecast-review",
+  "title": "Wind forecasting with limited data",
+  "created": "2026-11-18",
+  "review_mode": "related_work",
+  "question": "Which methods forecast wind speed one hour ahead with under two years of data?",
+  "scope": "Peer-reviewed or preprint papers, 2015 onward, English.",
+  "inclusion_rules": [
+    "Reports a forecast horizon of 24 hours or less",
+    "Full text available"
+  ],
+  "confidentiality": {
+    "decision": "claude_allowed",
+    "decided_on": "2026-11-18",
+    "words": "These are all published papers, Claude may read them."
+  },
+  "phase": "frame",
+  "corpus_snapshot": null,
+  "vocabulary_version": 0,
+  "skill_version": "1.0.0"
+}

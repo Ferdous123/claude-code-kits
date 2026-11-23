@@ -1,0 +1,41 @@
+{
+  "type": "object",
+  "description": "One line of corpus/snapshots.jsonl: a frozen corpus",
+  "additionalProperties": false,
+  "properties": {
+    "snapshot_id": {
+      "type": "string",
+      "description": "S0001 style id",
+      "pattern": "^S\\d{4,}$"
+    },
+    "date": {
+      "type": "string",
+      "description": "Date frozen",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "paper_ids": {
+      "type": "array",
+      "description": "Papers admitted (screening included, state full_text or abstract_only)",
+      "items": {
+        "type": "string",
+        "description": "paper id"
+      }
+    },
+    "corpus_hash": {
+      "type": "string",
+      "description": "SHA-256 over the sorted paper_id and file hash pairs"
+    },
+    "note": {
+      "type": "string",
+      "description": "Why it was frozen"
+    }
+  },
+  "required": [
+    "snapshot_id",
+    "date",
+    "paper_ids",
+    "corpus_hash"
+  ],
+  "$id": "snapshot",
+  "title": "snapshot"
+}

@@ -1,0 +1,13 @@
+{
+  "queue_id": "RQ0001",
+  "reason": "passes_disagree",
+  "paper_id": "P0001",
+  "page": 3,
+  "card_id": null,
+  "candidates": [
+    "P0001-3-A-1",
+    "P0001-3-B-1"
+  ],
+  "state": "open",
+  "created": "2026-11-18T10:30:00+06:00"
+}

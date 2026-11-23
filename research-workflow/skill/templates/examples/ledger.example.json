@@ -1,0 +1,24 @@
+{
+  "ledger_id": "L0001",
+  "kind": "contradiction",
+  "snapshot_id": "S0001",
+  "statement": "P0001 reports that adding humidity as an input lowers RMSE; P0002 reports that it raises RMSE on the same station set (corpus S0001).",
+  "card_ids": [
+    "C0001",
+    "C0002"
+  ],
+  "explanations_tried": [
+    {
+      "explanation": "different station sets",
+      "card_ids": [],
+      "outcome": "does_not_dissolve"
+    }
+  ],
+  "stated_by_papers": null,
+  "inferred_for_papers": null,
+  "negation_tested_by": [],
+  "searches": [],
+  "state": "open",
+  "dismissed_reason": null,
+  "created": "2026-11-18"
+}

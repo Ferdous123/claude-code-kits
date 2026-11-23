@@ -1,0 +1,291 @@
+{
+  "type": "object",
+  "description": "One line of cards/cards.jsonl: one version of an evidence card (append-only; the highest version of a card_id is current)",
+  "additionalProperties": false,
+  "properties": {
+    "card_id": {
+      "type": "string",
+      "description": "C0001 style id",
+      "pattern": "^C\\d{4,}$"
+    },
+    "version": {
+      "type": "integer",
+      "description": "Version number from 1",
+      "minimum": 1
+    },
+    "paper_id": {
+      "type": "string",
+      "description": "Paper the card comes from"
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "claim",
+        "result",
+        "method_step",
+        "dataset",
+        "assumption",
+        "limitation",
+        "definition",
+        "future_work",
+        "attributed_opinion"
+      ],
+      "description": "What kind of card"
+    },
+    "field": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "For not-stated records: the field that was looked for (e.g. dataset)"
+    },
+    "stated": {
+      "type": "boolean",
+      "description": "False means the paper does not state this; statement must then be exactly 'not stated' and no locator is needed"
+    },
+    "statement": {
+      "type": "string",
+      "description": "One self-contained sentence, or exactly 'not stated'"
+    },
+    "value": {
+      "type": [
+        "object",
+        "null"
+      ],
+      "description": "For result cards: number exactly as printed (as text), unit, metric, dataset",
+      "properties": {
+        "number": {
+          "type": "string"
+        },
+        "unit": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "metric": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dataset": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "number"
+      ],
+      "additionalProperties": false
+    },
+    "locators": {
+      "type": "array",
+      "description": "Where it is in the paper (at least one unless stated is false)",
+      "items": {
+        "type": "object",
+        "description": "One locator: where the quoted text is",
+        "additionalProperties": false,
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number from 1",
+            "minimum": 1
+          },
+          "quote": {
+            "type": "string",
+            "description": "Exact quoted text from the page",
+            "minLength": 3
+          },
+          "zone": {
+            "type": "string",
+            "enum": [
+              "title_block",
+              "abstract",
+              "heading",
+              "body",
+              "related_work",
+              "caption",
+              "table",
+              "equation",
+              "algorithm",
+              "footnote",
+              "bibliography",
+              "appendix",
+              "unknown"
+            ],
+            "description": "Zone of the block holding the quote"
+          },
+          "block_ids": {
+            "type": "array",
+            "description": "Blocks the quote overlaps",
+            "items": {
+              "type": "string",
+              "description": "block id"
+            }
+          },
+          "bbox": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "number"
+            },
+            "minItems": 4,
+            "maxItems": 4,
+            "description": "Union box of those blocks, or null"
+          }
+        },
+        "required": [
+          "page",
+          "quote",
+          "zone",
+          "block_ids",
+          "bbox"
+        ]
+      }
+    },
+    "origin": {
+      "type": "string",
+      "enum": [
+        "extracted",
+        "analyst",
+        "user"
+      ],
+      "description": "Who produced it"
+    },
+    "attribution": {
+      "type": "string",
+      "enum": [
+        "own",
+        "cited_work",
+        "disputed_view"
+      ],
+      "description": "Whose claim"
+    },
+    "attributed_to": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "For cited_work: the reference as printed"
+    },
+    "epistemic_class": {
+      "type": "string",
+      "enum": [
+        "source_quote",
+        "machine_extracted",
+        "researcher_interpreted",
+        "generated_hypothesis"
+      ],
+      "description": "What kind of statement"
+    },
+    "wording_strength": {
+      "type": "string",
+      "enum": [
+        "asserted",
+        "hedged",
+        "speculative",
+        "not_stated"
+      ],
+      "description": "Strength of the authors' wording"
+    },
+    "abstract_only": {
+      "type": "boolean",
+      "description": "True if the paper was read only as an abstract; such a card is context only"
+    },
+    "produced_by": {
+      "type": "object",
+      "description": "How it was made",
+      "additionalProperties": true,
+      "properties": {
+        "role": {
+          "type": "string",
+          "description": "Role name"
+        },
+        "models": {
+          "type": "array",
+          "description": "Models or 'claude' or 'person'",
+          "items": {
+            "type": "string",
+            "description": "id"
+          }
+        },
+        "run_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Run id"
+        }
+      },
+      "required": [
+        "role",
+        "models"
+      ]
+    },
+    "review_state": {
+      "type": "string",
+      "enum": [
+        "unreviewed",
+        "human_verified",
+        "disputed",
+        "rejected"
+      ],
+      "description": "Review state. human_verified is set only by a person."
+    },
+    "reviewed_by": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Name of the person, only for human_verified"
+    },
+    "reviewed_on": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Date a person looked",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "supersedes_version": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Earlier version this replaces"
+    },
+    "created": {
+      "type": "string",
+      "description": "When this version was written",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T"
+    },
+    "note": {
+      "type": "string",
+      "description": "Free note"
+    }
+  },
+  "required": [
+    "card_id",
+    "version",
+    "paper_id",
+    "type",
+    "stated",
+    "statement",
+    "locators",
+    "origin",
+    "attribution",
+    "epistemic_class",
+    "wording_strength",
+    "abstract_only",
+    "produced_by",
+    "review_state",
+    "created"
+  ],
+  "$id": "card",
+  "title": "card"
+}

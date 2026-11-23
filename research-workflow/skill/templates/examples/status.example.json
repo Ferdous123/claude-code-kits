@@ -1,0 +1,9 @@
+{
+  "status_id": "ST0001",
+  "item": "extract pass A, paper P0001",
+  "status": "ran-on-real-model",
+  "artefact": "candidates/P0001/A.jsonl",
+  "date": "2026-11-18",
+  "inspected_by": null,
+  "note": ""
+}

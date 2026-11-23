@@ -1,0 +1,126 @@
+{
+  "type": "object",
+  "description": "project.json: the project's own settings",
+  "additionalProperties": false,
+  "properties": {
+    "project_id": {
+      "type": "string",
+      "description": "Short id for the project",
+      "pattern": "^[a-z0-9][a-z0-9_-]{1,40}$"
+    },
+    "title": {
+      "type": "string",
+      "description": "Human title"
+    },
+    "created": {
+      "type": "string",
+      "description": "Creation date",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "review_mode": {
+      "type": "string",
+      "enum": [
+        "exploratory",
+        "related_work",
+        "systematic",
+        "scoping",
+        "thesis_chapter",
+        "contradiction_audit"
+      ],
+      "description": "What kind of review this is"
+    },
+    "question": {
+      "type": "string",
+      "description": "The research question in the researcher's words (may be empty until phase frame)"
+    },
+    "scope": {
+      "type": "string",
+      "description": "What is in and out, in the researcher's words"
+    },
+    "inclusion_rules": {
+      "type": "array",
+      "description": "Rules for admitting a paper",
+      "items": {
+        "type": "string",
+        "description": "One rule"
+      }
+    },
+    "confidentiality": {
+      "type": "object",
+      "description": "Decision on whether paper text may be sent to Claude",
+      "additionalProperties": false,
+      "properties": {
+        "decision": {
+          "type": "string",
+          "enum": [
+            "claude_allowed",
+            "local_only",
+            "undecided"
+          ],
+          "description": "claude_allowed = paper text may go to Claude; local_only = it may not; undecided = ask before any phase that reads text"
+        },
+        "decided_on": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "description": "Date the researcher decided",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "words": {
+          "type": "string",
+          "description": "The researcher's own words, as typed"
+        }
+      },
+      "required": [
+        "decision",
+        "decided_on",
+        "words"
+      ]
+    },
+    "phase": {
+      "type": "string",
+      "enum": [
+        "setup",
+        "frame",
+        "collect",
+        "roles",
+        "read",
+        "ask",
+        "map",
+        "challenge",
+        "compose",
+        "write"
+      ],
+      "description": "Current phase"
+    },
+    "corpus_snapshot": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Latest frozen snapshot id, or null"
+    },
+    "vocabulary_version": {
+      "type": "integer",
+      "description": "Current vocabulary version",
+      "minimum": 0
+    },
+    "skill_version": {
+      "type": "string",
+      "description": "Version of the skill that created the project"
+    }
+  },
+  "required": [
+    "project_id",
+    "title",
+    "created",
+    "review_mode",
+    "confidentiality",
+    "phase",
+    "vocabulary_version",
+    "skill_version"
+  ],
+  "$id": "project",
+  "title": "project"
+}

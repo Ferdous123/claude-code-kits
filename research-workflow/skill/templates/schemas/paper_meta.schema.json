@@ -1,0 +1,87 @@
+{
+  "type": "object",
+  "description": "parsed/<paper_id>/meta.json: what the parse found about the whole paper",
+  "additionalProperties": false,
+  "properties": {
+    "paper_id": {
+      "type": "string",
+      "description": "Paper id"
+    },
+    "pages": {
+      "type": "integer",
+      "description": "Pages parsed",
+      "minimum": 0
+    },
+    "backend": {
+      "type": "string",
+      "description": "Extractor"
+    },
+    "parser_version": {
+      "type": "string",
+      "description": "Extractor version"
+    },
+    "total_chars": {
+      "type": "integer",
+      "description": "Characters over all pages",
+      "minimum": 0
+    },
+    "low_text_pages": {
+      "type": "array",
+      "description": "Pages with fewer than 200 characters (figure pages, blank or scanned)",
+      "items": {
+        "type": "integer",
+        "description": "page number"
+      }
+    },
+    "text_layer": {
+      "type": "string",
+      "enum": [
+        "ok",
+        "partial",
+        "none"
+      ],
+      "description": "Overall verdict"
+    },
+    "parsed_on": {
+      "type": "string",
+      "description": "When",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T"
+    },
+    "eof_marker": {
+      "type": [
+        "boolean",
+        "null"
+      ],
+      "description": "True if the PDF's last 1024 bytes hold the end marker; false = probably a cut-off download; null = not a PDF or unreadable"
+    },
+    "suspect_text_pages": {
+      "type": "array",
+      "description": "Pages with several control, private-use or replacement characters (broken text layer; formulas there are not evidence)",
+      "items": {
+        "type": "integer",
+        "description": "page number"
+      }
+    },
+    "title_check": {
+      "type": "string",
+      "enum": [
+        "found",
+        "not_found",
+        "not_checked"
+      ],
+      "description": "Whether the register title occurs on pages 1-2 (not_checked: title too short to test)"
+    }
+  },
+  "required": [
+    "paper_id",
+    "pages",
+    "backend",
+    "parser_version",
+    "total_chars",
+    "low_text_pages",
+    "text_layer",
+    "parsed_on"
+  ],
+  "$id": "paper_meta",
+  "title": "paper_meta"
+}

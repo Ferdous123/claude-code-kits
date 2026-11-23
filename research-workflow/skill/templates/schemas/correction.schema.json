@@ -1,0 +1,87 @@
+{
+  "type": "object",
+  "description": "One line of corrections/corrections.jsonl: a person's fix of a card, parse or mapping. It outranks any model output.",
+  "additionalProperties": false,
+  "properties": {
+    "correction_id": {
+      "type": "string",
+      "description": "X0001 style id"
+    },
+    "card_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Card corrected, if a card"
+    },
+    "from_version": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Version before"
+    },
+    "to_version": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Version after"
+    },
+    "field": {
+      "type": "string",
+      "description": "What was corrected (statement, value, quote, type, zone, vocabulary, ...)"
+    },
+    "before": {
+      "type": "string",
+      "description": "Wrong content"
+    },
+    "after": {
+      "type": "string",
+      "description": "Right content"
+    },
+    "source_page": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Page where the person checked the source",
+      "minimum": 1
+    },
+    "source_quote": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Passage the person checked"
+    },
+    "by": {
+      "type": "string",
+      "description": "Person"
+    },
+    "words": {
+      "type": "string",
+      "description": "The person's own words about it"
+    },
+    "date": {
+      "type": "string",
+      "description": "Date",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    },
+    "disputed": {
+      "type": "boolean",
+      "description": "True if someone disputed it (its regression case is then suspended)"
+    }
+  },
+  "required": [
+    "correction_id",
+    "field",
+    "before",
+    "after",
+    "by",
+    "date",
+    "disputed"
+  ],
+  "$id": "correction",
+  "title": "correction"
+}

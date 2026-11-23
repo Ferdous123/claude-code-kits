@@ -1,0 +1,20 @@
+{
+  "paper_id": "P0001",
+  "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "original_name": "smith2021_wind.pdf",
+  "stored_path": "corpus/files/P0001.pdf",
+  "bytes": 482113,
+  "added": "2026-11-18T10:02:11+06:00",
+  "source": "upload",
+  "identifiers": {
+    "doi": "10.0000/example.123",
+    "arxiv": null
+  },
+  "title": "A short-term wind speed forecast with sparse data",
+  "state": "full_text",
+  "state_reason": "text layer present on all pages",
+  "pages": 11,
+  "licence": "unknown",
+  "screening": "included",
+  "screening_reason": "meets inclusion rules 1 and 2"
+}

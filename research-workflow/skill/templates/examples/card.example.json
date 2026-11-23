@@ -1,0 +1,51 @@
+{
+  "card_id": "C0001",
+  "version": 1,
+  "paper_id": "P0001",
+  "type": "result",
+  "field": null,
+  "stated": true,
+  "statement": "On the test set the proposed model reached an RMSE of 0.82 m/s.",
+  "value": {
+    "number": "0.82",
+    "unit": "m/s",
+    "metric": "RMSE",
+    "dataset": "test set"
+  },
+  "locators": [
+    {
+      "page": 3,
+      "quote": "The proposed model reached an RMSE of 0.82 m/s on the test set.",
+      "zone": "body",
+      "block_ids": [
+        "P0001-p0003-b002"
+      ],
+      "bbox": [
+        72.0,
+        110.0,
+        520.0,
+        126.0
+      ]
+    }
+  ],
+  "origin": "extracted",
+  "attribution": "own",
+  "attributed_to": null,
+  "epistemic_class": "machine_extracted",
+  "wording_strength": "asserted",
+  "abstract_only": false,
+  "produced_by": {
+    "role": "extract",
+    "models": [
+      "qwen3.5:4b",
+      "gemma3:4b"
+    ],
+    "run_id": "R0001"
+  },
+  "review_state": "unreviewed",
+  "reviewed_by": null,
+  "reviewed_on": null,
+  "supersedes_version": null,
+  "created": "2026-11-18T10:20:00+06:00",
+  "note": ""
+}

@@ -1,0 +1,68 @@
+{
+  "type": "object",
+  "description": "One line of drafts/<draft_id>.sentences.jsonl: one sentence of a draft and the cards it rests on",
+  "additionalProperties": false,
+  "properties": {
+    "sentence_id": {
+      "type": "string",
+      "description": "Sentence id, e.g. SN0001"
+    },
+    "draft_id": {
+      "type": "string",
+      "description": "Draft id"
+    },
+    "order": {
+      "type": "integer",
+      "description": "Position from 1",
+      "minimum": 1
+    },
+    "text": {
+      "type": "string",
+      "description": "The sentence as it stands in the draft"
+    },
+    "origin": {
+      "type": "string",
+      "enum": [
+        "machine",
+        "author",
+        "pasted"
+      ],
+      "description": "How it was produced. Machine text stays machine however much it is edited."
+    },
+    "machine_text": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "The original machine wording, kept to measure later edits"
+    },
+    "kind": {
+      "type": "string",
+      "enum": [
+        "supported",
+        "author_argument",
+        "blocked"
+      ],
+      "description": "supported = rests on cards; author_argument = the author's own reasoning (no cards needed); blocked = no support yet"
+    },
+    "card_ids": {
+      "type": "array",
+      "description": "Cards it rests on",
+      "items": {
+        "type": "string",
+        "description": "card id"
+      }
+    }
+  },
+  "required": [
+    "sentence_id",
+    "draft_id",
+    "order",
+    "text",
+    "origin",
+    "kind",
+    "card_ids"
+  ],
+  "$id": "sentence",
+  "title": "sentence"
+}

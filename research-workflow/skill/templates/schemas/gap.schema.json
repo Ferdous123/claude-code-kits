@@ -1,0 +1,189 @@
+{
+  "type": "object",
+  "description": "One line of gaps/gaps.jsonl: a candidate gap. Never called novel; always scoped.",
+  "additionalProperties": false,
+  "properties": {
+    "gap_id": {
+      "type": "string",
+      "description": "G0001 style id"
+    },
+    "statement": {
+      "type": "string",
+      "description": "Wording must be 'not found in the reviewed corpus' style; see the forbidden-wording list"
+    },
+    "mechanism": {
+      "type": "string",
+      "enum": [
+        "corpus_gap",
+        "unresolved_contradiction",
+        "untested_assumption",
+        "unexplained_anomaly",
+        "abandoned_line",
+        "recombination_candidate",
+        "generated_hypothesis"
+      ],
+      "description": "How it was found"
+    },
+    "scope": {
+      "type": "object",
+      "description": "Scope line: what a gap or dossier statement rests on",
+      "additionalProperties": true,
+      "properties": {
+        "snapshot_id": {
+          "type": "string",
+          "description": "Corpus snapshot id, e.g. S0001"
+        },
+        "vocabulary_version": {
+          "type": "integer",
+          "description": "Vocabulary version used",
+          "minimum": 0
+        },
+        "date": {
+          "type": "string",
+          "description": "Date the scope was written",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+        },
+        "searches": {
+          "type": "array",
+          "description": "External and full-text searches run",
+          "items": {
+            "type": "object",
+            "description": "One search",
+            "additionalProperties": true,
+            "properties": {
+              "where": {
+                "type": "string",
+                "description": "Where it was run (project full-text, a metadata service, a web search)"
+              },
+              "query": {
+                "type": "string",
+                "description": "The exact query"
+              },
+              "date": {
+                "type": "string",
+                "description": "Date run",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              },
+              "hits": {
+                "type": "integer",
+                "description": "Number of hits",
+                "minimum": 0
+              }
+            },
+            "required": [
+              "where",
+              "query",
+              "date",
+              "hits"
+            ]
+          }
+        },
+        "unread_papers": {
+          "type": "integer",
+          "description": "Papers in the neighbourhood not read in full",
+          "minimum": 0
+        },
+        "inaccessible_papers": {
+          "type": "integer",
+          "description": "Papers in the neighbourhood that could not be obtained",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "snapshot_id",
+        "vocabulary_version",
+        "date",
+        "searches",
+        "unread_papers",
+        "inaccessible_papers"
+      ]
+    },
+    "card_ids": {
+      "type": "array",
+      "description": "Supporting cards",
+      "items": {
+        "type": "string",
+        "description": "card id"
+      }
+    },
+    "ledger_ids": {
+      "type": "array",
+      "description": "Ledger records pointing here",
+      "items": {
+        "type": "string",
+        "description": "ledger id"
+      }
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "raw",
+        "under_review",
+        "killed_by_prior_art",
+        "killed_by_evidence",
+        "survives_scoped",
+        "adopted_by_researcher"
+      ],
+      "description": "State"
+    },
+    "state_decided_by": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Person who set a state beyond under_review (only a person may)"
+    },
+    "state_words": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Their sentence of reasoning"
+    },
+    "rank_inputs": {
+      "type": "object",
+      "description": "The only inputs to ranking: counts, no model score",
+      "additionalProperties": false,
+      "properties": {
+        "papers_read_in_full_nearby": {
+          "type": "integer",
+          "description": "count",
+          "minimum": 0
+        },
+        "ledgers_pointing_distinct_cards": {
+          "type": "integer",
+          "description": "count",
+          "minimum": 0
+        },
+        "cards_passing_machine_checks": {
+          "type": "integer",
+          "description": "count",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "papers_read_in_full_nearby",
+        "ledgers_pointing_distinct_cards",
+        "cards_passing_machine_checks"
+      ]
+    },
+    "created": {
+      "type": "string",
+      "description": "Date",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+    }
+  },
+  "required": [
+    "gap_id",
+    "statement",
+    "mechanism",
+    "scope",
+    "card_ids",
+    "ledger_ids",
+    "state",
+    "rank_inputs",
+    "created"
+  ],
+  "$id": "gap",
+  "title": "gap"
+}

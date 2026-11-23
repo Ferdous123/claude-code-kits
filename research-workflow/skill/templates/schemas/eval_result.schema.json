@@ -1,0 +1,171 @@
+{
+  "type": "object",
+  "description": "One line of evals/results.jsonl: a measured result. A number without pack, version and denominator is refused.",
+  "additionalProperties": false,
+  "properties": {
+    "run_id": {
+      "type": "string",
+      "description": "R0001 style id"
+    },
+    "date": {
+      "type": "string",
+      "description": "When",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T"
+    },
+    "pack_id": {
+      "type": "string",
+      "description": "Pack id"
+    },
+    "pack_version": {
+      "type": "string",
+      "description": "Pack version"
+    },
+    "pack_kind": {
+      "type": "string",
+      "enum": [
+        "smoke",
+        "screen",
+        "reference"
+      ],
+      "description": "Kind of pack"
+    },
+    "role": {
+      "type": "string",
+      "description": "Role measured"
+    },
+    "model": {
+      "type": "string",
+      "description": "Model tag or 'claude'"
+    },
+    "family": {
+      "type": "string",
+      "description": "Model family"
+    },
+    "machine_ref": {
+      "type": "string",
+      "description": "Fingerprint of the machine facts at the time"
+    },
+    "measures": {
+      "type": "array",
+      "description": "Each measure with its numerator and denominator",
+      "items": {
+        "type": "object",
+        "description": "One measure",
+        "additionalProperties": true,
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Measure name, naming what it was measured on"
+          },
+          "numerator": {
+            "type": "integer",
+            "description": "Successes",
+            "minimum": 0
+          },
+          "denominator": {
+            "type": "integer",
+            "description": "Items counted",
+            "minimum": 1
+          },
+          "value": {
+            "type": "number",
+            "description": "numerator / denominator"
+          },
+          "ci_low": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "ci_high": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "threshold": {
+            "type": [
+              "number",
+              "null"
+            ]
+          },
+          "op": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "min_n": {
+            "type": [
+              "integer",
+              "null"
+            ]
+          },
+          "passed": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "null = inconclusive or no threshold"
+          }
+        },
+        "required": [
+          "name",
+          "numerator",
+          "denominator",
+          "value",
+          "passed"
+        ]
+      },
+      "minItems": 1
+    },
+    "speed": {
+      "type": "object",
+      "description": "Speed on this machine",
+      "additionalProperties": true,
+      "properties": {
+        "seconds_total": {
+          "type": "number",
+          "description": "Wall seconds"
+        },
+        "tokens_per_second": {
+          "type": [
+            "number",
+            "null"
+          ]
+        },
+        "calls": {
+          "type": "integer",
+          "description": "Model calls",
+          "minimum": 0
+        }
+      }
+    },
+    "verdict": {
+      "type": "string",
+      "enum": [
+        "passed",
+        "failed",
+        "inconclusive"
+      ],
+      "description": "passed = all thresholds met with enough items; failed = a threshold missed; inconclusive = too few items"
+    },
+    "notes": {
+      "type": "string",
+      "description": "Notes"
+    }
+  },
+  "required": [
+    "run_id",
+    "date",
+    "pack_id",
+    "pack_version",
+    "pack_kind",
+    "role",
+    "model",
+    "measures",
+    "verdict"
+  ],
+  "$id": "eval_result",
+  "title": "eval_result"
+}

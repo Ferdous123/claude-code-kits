@@ -1,0 +1,74 @@
+{
+  "type": "object",
+  "description": "One line of review/queue.jsonl: something a second reader must settle (Claude by id, then a person where required)",
+  "additionalProperties": false,
+  "properties": {
+    "queue_id": {
+      "type": "string",
+      "description": "Q-id"
+    },
+    "reason": {
+      "type": "string",
+      "enum": [
+        "single_pass_only",
+        "passes_disagree",
+        "support_disagree",
+        "support_not_entails",
+        "consistency_flag",
+        "other"
+      ],
+      "description": "Why it is here"
+    },
+    "paper_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Paper"
+    },
+    "page": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "description": "Page"
+    },
+    "card_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "description": "Card"
+    },
+    "candidates": {
+      "type": "array",
+      "description": "Candidate ids involved",
+      "items": {
+        "type": "string",
+        "description": "cand id"
+      }
+    },
+    "state": {
+      "type": "string",
+      "enum": [
+        "open",
+        "decided"
+      ],
+      "description": "State"
+    },
+    "created": {
+      "type": "string",
+      "description": "When",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T"
+    }
+  },
+  "required": [
+    "queue_id",
+    "reason",
+    "candidates",
+    "state",
+    "created"
+  ],
+  "$id": "review_item",
+  "title": "review_item"
+}

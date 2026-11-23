@@ -1,0 +1,10 @@
+{
+  "exemplar_id": "EX0001",
+  "role": "extract",
+  "case_id": "RG0001",
+  "paper_id": "P0001",
+  "input_passage": "The proposed model reached an RMSE of 0.82 m/s on the test set.",
+  "wrong_output": "value 0.28",
+  "right_output": "value 0.82",
+  "created": "2026-11-18"
+}

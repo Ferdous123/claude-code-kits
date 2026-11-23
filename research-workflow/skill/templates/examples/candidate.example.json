@@ -1,0 +1,36 @@
+{
+  "cand_id": "P0001-3-A-1",
+  "run_id": "R0001",
+  "kind": "card",
+  "pass_name": "A",
+  "paper_id": "P0001",
+  "page": 3,
+  "model": "qwen3.5:4b",
+  "date": "2026-11-18T10:15:00+06:00",
+  "proposed": {
+    "type": "result",
+    "field": null,
+    "stated": true,
+    "statement": "The model reached an RMSE of 0.82 m/s on the test set.",
+    "value": {
+      "number": "0.82",
+      "unit": "m/s",
+      "metric": "RMSE",
+      "dataset": "test set"
+    },
+    "quote": "The proposed model reached an RMSE of 0.82 m/s on the test set.",
+    "attribution": "own",
+    "wording_strength": "asserted"
+  },
+  "schema_valid": true,
+  "located": {
+    "result": "passed",
+    "method": "exact",
+    "start": 11,
+    "end": 70,
+    "block_ids": [
+      "P0001-p0003-b002"
+    ],
+    "zone": "body"
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "_note": "Wording the workflow never uses about its own candidates, gaps, conjectures, dossiers or machine-drafted prose. It does not apply to quoted source text or to a card restating a paper. Kept outside any model's reach; change only with a DECISIONS.md row. A person may type these words in their own text.",
+  "always_forbidden": [
+    "\\bnovel(ty)?\\b",
+    "\\bno prior (work|art|research|studies|study)\\b",
+    "\\bunexplored\\b",
+    "\\bunder-?explored\\b",
+    "\\boverlooked\\b",
+    "\\b(has|have|had) (not|never) been (studied|explored|done|tried|investigated|addressed)\\b",
+    "\\bnever been (studied|explored|done|tried|investigated|addressed)\\b",
+    "\\bnobody has\\b",
+    "\\bno one has\\b",
+    "\\bopen problem\\b",
+    "\\buntouched\\b",
+    "\\bwhite[- ]?space\\b",
+    "\\bthe first (to|study|work|paper|attempt)\\b",
+    "\\bfirst-ever\\b",
+    "\\bgroundbreaking\\b",
+    "\\bunprecedented\\b"
+  ],
+  "needs_scope_line": ["\\bresearch gap\\b", "\\bknowledge gap\\b", "\\bliterature gap\\b"],
+  "verified_without_human": "(?<![Hh]uman[-_ ])\\bverified\\b",
+  "tick_marks": ["✓", "✔", "✅"],
+  "scope_markers_markdown": "^\\s*(\\*\\*)?(scope|scope line)(\\*\\*)?\\s*:",
+  "json_fields_linted": ["statement", "text", "claim", "wording", "goal", "closed_reason", "reason", "explanation", "why", "state_words", "cheapest_test", "note"],
+  "json_fields_skipped": ["researcher_words", "quote", "overlap_quote", "words", "input_passage", "wrong_output", "right_output", "before", "after", "source_quote"]
+}
